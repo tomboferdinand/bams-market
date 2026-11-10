@@ -1,5 +1,7 @@
 # MVP Backlog — Bam'S Market
 
+> **Version 1.1 — novembre 2026.** Chaque user story porte son état de réalisation. Les stories US-017 à US-023 sont apparues pendant la réalisation et ont été intégrées au MVP.
+
 ## 1. Epic : Gestion des utilisateurs
 
 ### US-001 : Inscription client
@@ -129,7 +131,7 @@
 **Critères d'acceptation :**
 
 * L'historique des commandes est disponible.
-* Les statuts sont clairement affichés : En attente, Payée, En préparation, En cours de livraison, Livrée ou Annulée.
+* Les statuts sont clairement affichés : En attente, Payée, En préparation, En cours de livraison, Livrée, Annulée ou Échouée.
 
 **Priorité :** Haute
 
@@ -271,6 +273,127 @@
 
 ---
 
+## 8. Epic : Comptes, argent et incidents *(ajouté en v1.1)*
+
+### US-017 : Devenir commerçant ou livreur
+
+**En tant que** Client,
+**Je veux** demander à devenir commerçant ou livreur,
+**Afin de** participer à la plateforme comme vendeur ou transporteur.
+
+**Critères d'acceptation :**
+
+* La demande indique le rôle et le numéro Mobile Money de retrait.
+* L'administrateur approuve ou refuse (motif).
+* Après approbation, le rôle ne change qu'à l'ouverture du lien reçu par e-mail.
+
+**Priorité :** Haute
+
+---
+
+### US-018 : Sécuriser son compte
+
+**En tant qu'** Utilisateur,
+**Je veux** vérifier mon e-mail et pouvoir réinitialiser mon mot de passe,
+**Afin de** protéger mon compte et pouvoir le récupérer.
+
+**Critères d'acceptation :**
+
+* Un lien de vérification est envoyé par e-mail ; sans vérification, pas de commande ni de retrait.
+* Le mot de passe oublié passe par un lien à usage unique valable 1 heure.
+* Les échecs de connexion répétés verrouillent temporairement le compte.
+
+**Priorité :** Haute
+
+---
+
+### US-019 : Comprendre l'état d'une commande non aboutie
+
+**En tant que** Client,
+**Je veux** voir clairement pourquoi une commande est annulée ou échouée et quoi faire,
+**Afin de** ne pas rester bloqué.
+
+**Critères d'acceptation :**
+
+* « Mes commandes » classe les commandes en En cours / Terminées / Annulées ou échouées.
+* Une commande non payée affiche son heure limite et s'annule automatiquement.
+* Un message distinct explique annulation, paiement non abouti et livraison impossible.
+
+**Priorité :** Haute
+
+---
+
+### US-020 : Déclarer une livraison impossible
+
+**En tant que** Livreur,
+**Je veux** déclarer qu'une livraison est impossible,
+**Afin de** clore la mission sans fausser les comptes.
+
+**Critères d'acceptation :**
+
+* La mission passe à « Échec », la commande à « Échouée », le stock est restitué.
+* Personne n'est crédité.
+
+**Priorité :** Haute
+
+---
+
+### US-021 : Portefeuille et retraits
+
+**En tant que** Commerçant ou Livreur,
+**Je veux** voir mes gains et les retirer par Mobile Money,
+**Afin de** être payé pour mon activité.
+
+**Critères d'acceptation :**
+
+* Le solde provient d'un livre de comptes non modifiable.
+* Le retrait va vers le numéro verrouillé, après confirmation par mot de passe, avec frais affichés.
+* Un retrait refusé annule le débit.
+
+**Priorité :** Haute
+
+---
+
+### US-022 : Rembourser un client
+
+**En tant qu'** Administrateur,
+**Je veux** enregistrer le remboursement d'une commande dont la livraison a échoué,
+**Afin de** savoir qui est remboursé et d'éviter un double remboursement.
+
+**Critères d'acceptation :**
+
+* Le montant est celui du paiement enregistré.
+* Le remboursement est enregistré une seule fois par commande, avec la référence de la transaction.
+* Le client voit « remboursé » sur sa commande.
+
+**Priorité :** Haute
+
+---
+
+### US-023 : Modifier un numéro de retrait
+
+**En tant qu'** Administrateur,
+**Je veux** modifier le numéro de retrait d'un commerçant ou d'un livreur avec un motif,
+**Afin de** traiter un numéro perdu ou erroné sans ouvrir de faille.
+
+**Critères d'acceptation :**
+
+* Le numéro ne peut appartenir qu'à un compte.
+* Le motif est obligatoire et la modification est journalisée.
+
+**Priorité :** Moyenne
+
+---
+
+# État de réalisation du MVP
+
+| User story | État |
+|---|---|
+| US-001 à US-014 | Réalisées |
+| US-015 Validation des commerçants | Réalisée |
+| US-016 Supervision (utilisateurs, catégories, commandes, paiements, retraits, journal d'audit, tableau de bord) | Réalisée |
+| US-017 à US-023 | Réalisées |
+
 # Priorisation du MVP
 
 | Epic                     | Priorité |
@@ -285,6 +408,11 @@
 
 ## Fonctionnalités prévues après le MVP
 
+* Demande de changement de numéro de retrait depuis l'application (aujourd'hui : contact de l'administration).
+* Blocage de l'accès au site tant que l'e-mail n'est pas vérifié.
+* Remboursement automatique par la passerelle de paiement et réconciliation des paiements.
+* Page de statistiques détaillées pour le commerçant.
+* Notifications dans l'application et par SMS.
 * Avis et évaluations.
 * Recommandations intelligentes.
 * Nouveaux moyens de paiement (Orange Money, MVola, Airtel Money, paiement à la livraison).

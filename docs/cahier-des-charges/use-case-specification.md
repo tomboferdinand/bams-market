@@ -1,5 +1,7 @@
 # Use Case Specification — Bam'S Market
 
+> **Version 1.1 — novembre 2026.** Mise à jour d'après le MVP réalisé : UC-001, UC-005 et UC-007 sont précisés, et les cas UC-009 à UC-016 sont ajoutés.
+
 ## 1. Introduction & Vue d'ensemble
 
 Ce document détaille les cas d'utilisation (*Use Cases*) fonctionnels pour le MVP de la plateforme **Bam'S Market**. Il sert de liaison directe entre les besoins exprimés dans le Backlog MVP, les règles métier (*Business Rules*) et les futurs diagrammes d'architecture UML (Diagrammes de cas d'utilisation, de séquence et de classes).
@@ -29,14 +31,14 @@ Ce document détaille les cas d'utilisation (*Use Cases*) fonctionnels pour le M
 - **Déclencheur (Trigger) :** Le client clique sur "Créer un compte".
 - **Fréquence :** Élevée (à chaque nouvel utilisateur).
 - **Préconditions :** Aucune.
-- **Règles métier associées :** BR-USR-01, BR-USR-02, BR-USR-03, BR-USR-04.
+- **Règles métier associées :** BR-USR-01, BR-USR-02, BR-USR-03, BR-USR-04, BR-USR-06.
 - **Scénario principal :**
   1. Le client accède au formulaire d'inscription.
   2. Le client saisit ses informations (Nom, Prénom, Email, Téléphone, Mot de passe).
   3. Le système vérifie l'unicité et le format des identifiants (Email et Téléphone).
   4. Le système enregistre le nouveau compte avec le rôle `CLIENT` conformément aux règles de sécurité définies.
   5. Le système connecte automatiquement le client et l'oriente vers la page d'accueil.
-  6. Le système envoie une notification de confirmation de création de compte au client.
+  6. Le système envoie un e-mail contenant un lien de vérification d'adresse (BR-USR-06). Tant que le lien n'est pas ouvert, le client peut parcourir le catalogue mais ne peut pas commander.
 - **Scénario alternatif (3a - Données invalides ou existantes) :**
   - Si le téléphone ou l'email est déjà utilisé ou si le mot de passe ne respecte pas les critères de sécurité :
     1. Le système affiche un message d'erreur explicite.
@@ -62,6 +64,7 @@ Ce document détaille les cas d'utilisation (*Use Cases*) fonctionnels pour le M
 - **Exceptions :**
   - **Identifiants incorrects :** Le système affiche un message d'erreur d'authentification générique.
   - **Compte suspendu (BR-USR-05) :** Le système refuse la connexion et informe l'utilisateur de contacter le support.
+  - **Trop d'échecs (BR-USR-08) :** Le compte est verrouillé temporairement.
 - **Postconditions :** L'utilisateur est authentifié et sa session est ouverte avec les droits correspondant à son rôle.
 
 ---
@@ -117,21 +120,22 @@ Ce document détaille les cas d'utilisation (*Use Cases*) fonctionnels pour le M
 - **Déclencheur (Trigger) :** Le client clique sur "Valider et Payer la commande".
 - **Fréquence :** Élevée.
 - **Préconditions :** Client connecté, panier non vide avec des articles en stock.
-- **Règles métier associées :** BR-PRD-03, BR-PRD-04, BR-CMD-01, BR-CMD-02, BR-PAY-01, BR-PAY-02, BR-PAY-03, BR-SEC-02.
+- **Règles métier associées :** BR-PRD-03, BR-PRD-04, BR-CMD-01, BR-CMD-02, BR-CMD-07, BR-CMD-08, BR-PAY-01 à BR-PAY-07, BR-SEC-02.
 - **Scénario principal :**
   1. Le client valide son panier et saisit son adresse précise de livraison à Fianarantsoa.
   2. Le système calcule le sous-total, effectue le contrôle des prix côté serveur et calcule les frais de livraison.
-  3. Le système crée une commande au statut `EN_ATTENTE_PAIEMENT` et bloque temporairement le stock (BR-PRD-04).
-  4. Le système redirige le client vers le service de paiement GoalPay.
+  3. Le système crée une commande au statut `EN_ATTENTE_PAIEMENT`, réserve le stock dans la même transaction (BR-PRD-04) et génère le code de confirmation de livraison (BR-LIV-06). Le panier ne contient qu'une seule boutique (BR-CMD-07) et le compte doit être vérifié (BR-USR-06).
+  4. Le système redirige le client vers le service de paiement GoalPay (ou, en mode démonstration, vers le paiement simulé).
   5. Le client saisit ses coordonnées Mobile Money et valide la transaction sur son téléphone.
   6. GoalPay transmet le résultat de la transaction au système Bam'S Market.
   7. Le système enregistre la confirmation de paiement de manière idempotente (BR-PAY-02).
   8. La commande passe au statut `PAYÉE`.
-  9. Le système envoie une notification de confirmation de commande au client et une notification de nouvelle commande au commerçant.
+  9. La commande devient visible dans l'espace du commerçant (BR-CMD-09) et le client voit son avancement dans « Mes commandes ».
 - **Exceptions :**
   - **Panier vide :** La validation de commande est bloquée.
   - **Produit devenu indisponible / Stock insuffisant :** Notification au client et mise à jour du panier.
-  - **Échec ou Expiration du paiement (BR-PAY-03) :** Si le paiement n'est pas confirmé dans le délai imparti, la commande passe à l'état `ÉCHOUÉE` et la réservation du stock est annulée.
+  - **Échec ou Expiration du paiement (BR-PAY-03) :** Si le paiement n'est pas confirmé dans le délai imparti (10 minutes), la commande passe à l'état `ECHOUEE` et la réservation du stock est annulée.
+  - **Commande jamais payée (BR-CMD-08) :** Au bout de 30 minutes sans paiement, la commande passe automatiquement à `ECHOUEE` et le stock est restitué.
   - **Erreur/Indisponibilité GoalPay :** Notification du client pour réimpression ou choix d'un autre essai.
 - **Postconditions :** La commande est enregistrée comme payée, le stock définitif est décrémenté, et la commande est transmise au commerçant.
 
@@ -151,9 +155,9 @@ Ce document détaille les cas d'utilisation (*Use Cases*) fonctionnels pour le M
   2. Il prépare le colis selon le détail de la commande.
   3. Il clique sur "Marquer comme prête pour expédition".
   4. Le système passe le statut de la commande à `EN_PRÉPARATION`.
-  5. Le système notifie le réseau de livreurs qu'une course est disponible.
+  5. Le système crée la mission de livraison, qui apparaît dans la liste des missions disponibles des livreurs.
 - **Exceptions :**
-  - **Rupture imprévue :** Le commerçant signale l'impossibilité d'honorer la commande, déclenchant le processus d'annulation et de remboursement.
+  - **Rupture imprévue :** non gérée dans l'application au MVP ; le commerçant contacte l'administration, qui traite le cas manuellement (annulation ou remboursement). Un circuit dédié est prévu après le MVP.
 - **Postconditions :** La commande est au statut `EN_PRÉPARATION` et prête pour la prise en charge logistique.
 
 ---
@@ -169,14 +173,15 @@ Ce document détaille les cas d'utilisation (*Use Cases*) fonctionnels pour le M
   1. Le livreur consulte les missions de livraison disponibles dans sa zone à Fianarantsoa.
   2. Il accepte la mission (sous réserve de respecter la limite de livraisons simultanées - BR-LIV-03).
   3. Le système lui attribue la commande et passe le statut à `EN_COURS_DE_LIVRAISON`.
-  4. Le système notifie le client que son colis est en cours d'acheminement avec les coordonnées du livreur.
+  4. Le livreur obtient alors les coordonnées complètes de livraison (BR-SEC-06) ; le client voit sa commande « En cours de livraison ».
   5. Le livreur récupère le colis chez le commerçant et se rend à l'adresse du client.
   6. Lors de la remise du colis, le livreur saisit le code de confirmation transmis par le client (BR-LIV-04).
   7. Le système valide le code et passe le statut de la commande à `LIVRÉE`.
-  8. Le système envoie une notification de livraison effectuée au client et au commerçant.
+  8. Le système crédite le portefeuille du commerçant et celui du livreur (BR-WAL-02).
 - **Exceptions :**
   - **Code de confirmation incorrect :** La validation de la livraison est bloquée.
-  - **Absence du client :** Le livreur signale l'échec de remise et la commande passe en tentative d'échec de livraison.
+  - **Absence du client :** Voir UC-013 (livraison impossible).
+  - **Trop de codes erronés (BR-LIV-06) :** La confirmation est bloquée.
 - **Postconditions :** La livraison est clôturée et la commande passe au statut `LIVRÉE`.
 
 ---
@@ -195,12 +200,96 @@ Ce document détaille les cas d'utilisation (*Use Cases*) fonctionnels pour le M
   2. Il vérifie la complétude des informations requises (Nom, adresse physique, téléphone, logo).
   3. L'administrateur valide la boutique.
   4. Le système passe le statut de la boutique à `VALIDÉE`.
-  5. Le système envoie une notification d'approbation au commerçant.
+  5. La boutique devient visible au catalogue (si le compte du commerçant est actif) et le commerçant peut publier ses produits.
 - **Scénario alternatif (Suspension) :**
   - En cas de non-respect des conditions ou de litige grave, l'administrateur suspend une boutique.
   - Le système passe la boutique au statut `SUSPENDUE` et retire immédiatement tous ses produits de l'affichage public du catalogue (BR-BQT-04).
-  - Le système notifie le commerçant de la suspension.
+  - Le commerçant voit le nouveau statut de sa boutique.
 - **Postconditions :** Le statut de la boutique est mis à jour et l'action est enregistrée dans le journal d'audit (`Audit Trail`).
+
+---
+
+### 3.6 Module : Comptes, rôles et sécurité *(ajouté en v1.1)*
+
+#### UC-009 : Demander un rôle (commerçant ou livreur) et l'activer
+- **Objectif :** Permettre à un client de devenir commerçant ou livreur, sous contrôle de l'administration.
+- **Acteurs :** Client (demandeur), Administrateur.
+- **Préconditions :** Client connecté, e-mail vérifié (BR-USR-06).
+- **Règles métier associées :** BR-ROL-01 à BR-ROL-04, BR-USR-04.
+- **Scénario principal :**
+  1. Le client dépose une demande (rôle souhaité, numéro Mobile Money de retrait, message).
+  2. L'administrateur consulte les demandes en attente et approuve.
+  3. Le système envoie au demandeur un e-mail contenant un lien d'activation.
+  4. Le demandeur ouvre le lien ; le système change son rôle et enregistre le numéro de retrait, qui devient verrouillé.
+- **Scénarios alternatifs :** l'administrateur refuse avec un motif ; le demandeur annule sa demande ; le lien expire.
+- **Exceptions :** numéro de retrait déjà rattaché à un autre compte (refusé).
+- **Postconditions :** le compte a le nouveau rôle ; chaque décision est journalisée.
+
+#### UC-010 : Vérifier son e-mail et réinitialiser son mot de passe
+- **Objectif :** Prouver la propriété de l'adresse e-mail et permettre de récupérer un compte.
+- **Acteur principal :** Utilisateur.
+- **Règles métier associées :** BR-USR-06, BR-USR-08, BR-USR-09.
+- **Scénario principal (vérification) :** l'utilisateur ouvre le lien reçu par e-mail ; le compte passe à `VERIFIE` ; une bannière de rappel disparaît.
+- **Scénario alternatif (mot de passe oublié) :** l'utilisateur demande un lien, l'ouvre dans l'heure, choisit un nouveau mot de passe ; le lien devient inutilisable.
+- **Exceptions :** lien expiré ou déjà utilisé : message d'erreur et nouvelle demande possible.
+
+#### UC-011 : Gérer son panier
+- **Objectif :** Préparer une commande en ajoutant, modifiant ou retirant des produits.
+- **Acteur principal :** Client.
+- **Règles métier associées :** BR-PRD-03, BR-CMD-07, BR-BQT-04.
+- **Scénario principal :** le client ajoute un produit disponible ; modifie les quantités ; le total est recalculé ; le panier est conservé entre les connexions.
+- **Exceptions :** produit en rupture ou d'une boutique fermée : refusé ; produit d'une autre boutique : refusé avec explication (BR-CMD-07).
+
+#### UC-012 : Suivre et annuler ses commandes
+- **Objectif :** Permettre au client de suivre l'avancement et d'annuler tant que la commande n'est pas payée.
+- **Acteur principal :** Client.
+- **Règles métier associées :** BR-CMD-02, BR-CMD-03, BR-CMD-06, BR-CMD-08.
+- **Scénario principal :**
+  1. Le client ouvre « Mes commandes » : trois onglets (En cours, Terminées, Annulées / échouées).
+  2. Pour une commande non payée, il voit l'heure limite de paiement et peut « Payer maintenant » ou annuler.
+  3. Pour une commande en cours, il suit l'avancement et retrouve son code de confirmation de livraison.
+- **Scénarios alternatifs :** l'annulation restitue le stock ; après l'heure limite, le système annule automatiquement ; « Commander à nouveau » remet les articles disponibles dans le panier.
+- **Postconditions :** le statut est historisé ; le stock est restitué en cas d'annulation ou d'expiration.
+
+#### UC-013 : Déclarer une livraison impossible
+- **Objectif :** Permettre au livreur de clore proprement une livraison qui n'aboutit pas.
+- **Acteur principal :** Livreur.
+- **Règles métier associées :** BR-LIV-07, BR-REF-01, BR-SEC-01.
+- **Scénario principal :** le livreur choisit « Livraison impossible » et confirme ; la mission passe à `ECHEC`, la commande à `ECHOUEE`, le stock est restitué, aucun crédit n'est fait ; le client voit un message explicite et la marche à suivre pour être remboursé.
+- **Postconditions :** statut historisé, action journalisée.
+
+### 3.7 Module : Argent *(ajouté en v1.1)*
+
+#### UC-014 : Consulter son portefeuille et retirer ses gains
+- **Objectif :** Permettre à un commerçant ou un livreur de voir ses gains et de les retirer par Mobile Money.
+- **Acteurs principaux :** Commerçant, Livreur. **Acteur secondaire :** fournisseur de paiement.
+- **Règles métier associées :** BR-WAL-01 à BR-WAL-06, BR-ROL-04, BR-USR-06.
+- **Scénario principal :**
+  1. L'utilisateur ouvre son portefeuille : solde, historique des écritures, numéro de retrait masqué et verrouillé.
+  2. Il saisit un montant ; le système calcule les frais et le montant reçu.
+  3. Il confirme avec son mot de passe.
+  4. Le système débite le solde, envoie le retrait vers le numéro verrouillé et adresse un e-mail de confirmation à l'utilisateur.
+- **Scénarios alternatifs :** retrait refusé par le fournisseur : le débit est annulé ; l'utilisateur souhaite changer de numéro : il contacte l'administration (UC-016).
+- **Exceptions :** montant hors plafonds ; solde insuffisant ; mot de passe erroné (blocage temporaire après plusieurs erreurs).
+
+#### UC-015 : Rembourser un client après une livraison échouée
+- **Objectif :** Permettre à l'administrateur de rembourser un client et d'en garder la trace.
+- **Acteur principal :** Administrateur.
+- **Règles métier associées :** BR-REF-01 à BR-REF-04, BR-SEC-01, BR-SEC-08.
+- **Scénario principal :**
+  1. Le client écrit à l'administration en indiquant uniquement le numéro de commande.
+  2. L'administrateur ouvre la commande : « À rembourser : X MGA » (montant du paiement enregistré).
+  3. Il effectue le transfert Mobile Money, puis saisit la référence de la transaction et valide.
+  4. Le système enregistre le remboursement (date, administrateur, référence) et le client voit « remboursé ».
+- **Exceptions :** commande déjà remboursée, non payée ou non échouée : refusé ; deux validations simultanées : la seconde est refusée.
+- **Postconditions :** un remboursement unique est enregistré et journalisé.
+
+#### UC-016 : Modifier le numéro de retrait d'un utilisateur
+- **Objectif :** Changer un numéro verrouillé de façon contrôlée (numéro perdu, erreur).
+- **Acteur principal :** Administrateur.
+- **Règles métier associées :** BR-ROL-04.
+- **Scénario principal :** l'utilisateur contacte l'administration ; l'administrateur saisit le nouveau numéro et un motif obligatoire ; le système vérifie que ce numéro n'appartient à aucun autre compte, le remplace, journalise et informe le titulaire par e-mail.
+- **Exceptions :** numéro déjà utilisé par un autre compte : refusé.
 
 ---
 
@@ -216,3 +305,11 @@ Ce document détaille les cas d'utilisation (*Use Cases*) fonctionnels pour le M
 | **UC-006** | Préparer la commande | US-012 | BR-CMD-02, BR-CMD-04 |
 | **UC-007** | Prise en charge et livraison du colis | US-013, US-014 | BR-LIV-01, BR-LIV-02, BR-LIV-03, BR-LIV-04 |
 | **UC-008** | Approuver ou suspendre une boutique | US-015 | BR-BQT-01, BR-BQT-03, BR-BQT-04, BR-SEC-01 |
+| **UC-009** | Demander un rôle et l'activer | US-017 | BR-ROL-01 à BR-ROL-04, BR-USR-04 |
+| **UC-010** | Vérifier son e-mail, réinitialiser son mot de passe | US-002, US-018 | BR-USR-06, BR-USR-08, BR-USR-09 |
+| **UC-011** | Gérer son panier | US-006 | BR-PRD-03, BR-CMD-07, BR-BQT-04 |
+| **UC-012** | Suivre et annuler ses commandes | US-008, US-019 | BR-CMD-02, BR-CMD-03, BR-CMD-06, BR-CMD-08 |
+| **UC-013** | Déclarer une livraison impossible | US-020 | BR-LIV-07, BR-REF-01, BR-SEC-01 |
+| **UC-014** | Consulter son portefeuille et retirer | US-021 | BR-WAL-01 à BR-WAL-06, BR-ROL-04 |
+| **UC-015** | Rembourser un client | US-022 | BR-REF-01 à BR-REF-04, BR-SEC-08 |
+| **UC-016** | Modifier le numéro de retrait | US-023 | BR-ROL-04 |
