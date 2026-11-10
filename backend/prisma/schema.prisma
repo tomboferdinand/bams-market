@@ -1,0 +1,414 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  CLIENT
+  COMMERCANT
+  LIVREUR
+  ADMINISTRATEUR
+}
+
+enum AccountStatus {
+  ACTIF
+  SUSPENDU
+  DESACTIVE
+}
+
+enum VerificationStatus {
+  VERIFIE
+  NON_VERIFIE
+}
+
+model User {
+  id                 Int                 @id @default(autoincrement())
+  email              String?             @unique
+  phone              String?             @unique
+  passwordHash       String
+  firstName          String
+  lastName           String
+  role               Role                @default(CLIENT)
+  accountStatus      AccountStatus       @default(ACTIF)
+  verificationStatus VerificationStatus  @default(NON_VERIFIE)
+  verificationToken           String?   @unique // empreinte SHA-256 du jeton envoyé par e-mail
+  verificationTokenExpiresAt  DateTime?
+
+  // Mot de passe oublié (empreinte du jeton, valable 1 h) et verrouillage après échecs de connexion.
+  passwordResetTokenHash   String?   @unique
+  passwordResetExpiresAt   DateTime?
+  loginAttempts            Int       @default(0)
+  loginLockedUntil         DateTime?
+
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  shop Shop?
+
+  addresses Address[]
+  cart      Cart?
+  orders    Order[]
+  deliveries Delivery[]
+  auditLogs AuditLog[]
+  walletEntries WalletEntry[]
+  payouts       Payout[]
+  refundsIssued Refund[] @relation("RefundAdmin")
+
+  // Demandes de rôle (devenir commerçant ou livreur) : déposées par l'utilisateur, tranchées par un administrateur.
+  roleRequests        RoleRequest[] @relation("RoleRequestApplicant")
+  decidedRoleRequests RoleRequest[] @relation("RoleRequestDecider")
+
+  // Retraits (portefeuille → Mobile Money).
+  // Numéro de retrait : enregistré à l'activation du rôle, modifiable uniquement par un administrateur.
+  payoutPhone          String?
+  // Confirmation des retraits par mot de passe : erreurs comptées, blocage temporaire.
+  payoutAuthAttempts    Int       @default(0)
+  payoutAuthLockedUntil DateTime?
+
+  @@map("users")
+}
+
+enum ShopStatus {
+  EN_ATTENTE_VALIDATION
+  VALIDEE
+  SUSPENDUE
+  INACTIVE
+}
+
+
+
+model Shop {
+  id           Int        @id @default(autoincrement())
+  ownerId      Int        @unique
+  owner        User       @relation(fields: [ownerId], references: [id])
+
+  name         String
+  description  String
+  address      String
+  contactPhone String
+  logoUrl      String?
+
+  status       ShopStatus @default(EN_ATTENTE_VALIDATION)
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  products Product[]
+
+  @@map("shops")
+}
+
+
+enum ProductStatus {
+  DISPONIBLE
+  RUPTURE_DE_STOCK
+}
+
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+  products  Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          Int           @id @default(autoincrement())
+  shopId      Int
+  shop        Shop          @relation(fields: [shopId], references: [id])
+  categoryId  Int
+  category    Category      @relation(fields: [categoryId], references: [id])
+
+  name        String
+  description String
+  price       Int           // Ariary, entier, > 0 (BR-PRD-02)
+  stock       Int           @default(0) // >= 0 (BR-PRD-03)
+  status      ProductStatus @default(DISPONIBLE)
+  imageUrl    String?
+  isActive    Boolean       @default(true) // suppression logique (BR-PRD-05)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@map("products")
+}
+
+enum OrderStatus {
+  EN_ATTENTE_PAIEMENT
+  PAYEE
+  EN_PREPARATION
+  EN_COURS_DE_LIVRAISON
+  LIVREE
+  ANNULEE
+  ECHOUEE
+}
+
+model Address {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  label       String
+  fullAddress String
+  city        String   @default("Fianarantsoa")
+  phone       String
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  orders      Order[]
+
+  @@map("addresses")
+}
+
+model Cart {
+  id        Int        @id @default(autoincrement())
+  userId    Int        @unique
+  user      User       @relation(fields: [userId], references: [id])
+  items     CartItem[]
+  updatedAt DateTime   @default(now()) @updatedAt
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        Int     @id @default(autoincrement())
+  cartId    Int
+  cart      Cart    @relation(fields: [cartId], references: [id])
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
+
+model Order {
+  id            Int                  @id @default(autoincrement())
+  userId        Int
+  user          User                 @relation(fields: [userId], references: [id])
+  addressId     Int
+  address       Address              @relation(fields: [addressId], references: [id])
+  status        OrderStatus          @default(EN_ATTENTE_PAIEMENT)
+  subtotal      Int
+  deliveryFee   Int
+  total         Int
+  // Répartition figée à la création (BR-PAY-04) : commission sur le sous-total, le reste au commerçant ;
+  // le livreur reçoit les frais de livraison (deliveryFee).
+  commissionPercent Float @default(0)
+  commissionAmount  Int   @default(0)
+  merchantAmount    Int   @default(0)
+  items         OrderItem[]
+  statusHistory OrderStatusHistory[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @default(now()) @updatedAt
+  payment Payment?
+  confirmationCode String?
+  delivery         Delivery?
+  walletEntries    WalletEntry[]
+  refund           Refund?
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        Int     @id @default(autoincrement())
+  orderId   Int
+  order     Order   @relation(fields: [orderId], references: [id])
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  unitPrice Int
+
+  @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id        Int         @id @default(autoincrement())
+  orderId   Int
+  order     Order       @relation(fields: [orderId], references: [id])
+  status    OrderStatus
+  changedAt DateTime    @default(now())
+
+  @@map("order_status_history")
+}
+
+
+enum PaymentStatus {
+  EN_ATTENTE
+  VALIDEE
+  ECHOUEE
+  EXPIREE
+}
+
+model Payment {
+  id                Int           @id @default(autoincrement())
+  orderId           Int           @unique
+  order             Order         @relation(fields: [orderId], references: [id])
+  provider          String        @default("GOALPAY")
+  externalReference String?       @unique // référence GoalPay (order_reference)
+  merchantReference String?       @unique // notre référence envoyée à GoalPay (BAM-<commande>-<aléa>)
+  checkoutUrl       String?       // page de paiement GoalPay (valable ~10 min)
+  amount            Int
+  commissionAmount  Int
+  merchantAmount    Int
+  status            PaymentStatus @default(EN_ATTENTE)
+  expiresAt         DateTime
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @default(now()) @updatedAt
+
+  @@map("payments")
+}
+
+
+enum DeliveryStatus {
+  DISPONIBLE
+  EN_COURS
+  LIVREE
+  ECHEC
+}
+
+model Delivery {
+  id          Int            @id @default(autoincrement())
+  orderId     Int            @unique
+  order       Order          @relation(fields: [orderId], references: [id])
+  livreurId   Int?
+  livreur     User?          @relation(fields: [livreurId], references: [id])
+  status      DeliveryStatus @default(DISPONIBLE)
+  acceptedAt  DateTime?
+  deliveredAt DateTime?
+  confirmAttempts Int        @default(0) // codes de confirmation erronés (blocage au-delà du maximum)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @default(now()) @updatedAt
+
+  @@map("deliveries")
+}
+
+enum WalletEntryType {
+  VENTE      // crédit du commerçant : sous-total − commission
+  LIVRAISON  // crédit du livreur : frais de livraison
+  RETRAIT    // débit : retrait demandé (montant négatif : montant reçu + frais)
+  RETRAIT_ANNULE // crédit : retrait échoué, le débit est annulé
+}
+
+// Livre de comptes : le solde d'un utilisateur est la somme de ses lignes. Une ligne n'est jamais
+// modifiée ni supprimée ; la contrainte (orderId, userId, type) empêche de créditer deux fois
+// la même commande.
+model WalletEntry {
+  id        Int             @id @default(autoincrement())
+  userId    Int
+  user      User            @relation(fields: [userId], references: [id])
+  orderId   Int?
+  order     Order?          @relation(fields: [orderId], references: [id])
+  payoutId  Int?
+  payout    Payout?         @relation(fields: [payoutId], references: [id])
+  type      WalletEntryType
+  amount    Int             // > 0 : crédit ; < 0 : retrait
+  // Date à partir de laquelle la ligne compte dans le solde retirable (délai de séjour après livraison).
+  availableAt DateTime      @default(now())
+  createdAt DateTime        @default(now())
+
+  @@unique([orderId, userId, type])
+  @@unique([payoutId, type]) // un retrait n'est débité et annulé qu'une seule fois
+  @@index([userId])
+  @@map("wallet_entries")
+}
+
+enum PayoutStatus {
+  EN_ATTENTE
+  REUSSI
+  ECHOUE
+}
+
+// Retrait vers un numéro Mobile Money. Le débit correspondant est une ligne WalletEntry (RETRAIT).
+model Payout {
+  id                Int          @id @default(autoincrement())
+  userId            Int
+  user              User         @relation(fields: [userId], references: [id])
+  phone             String       // numéro de destination, figé au moment de la demande
+  amount            Int          // montant reçu par le bénéficiaire
+  fees              Int          // frais fournisseur, à sa charge
+  totalDebited      Int          // amount + fees, retiré de son solde
+  status            PayoutStatus @default(EN_ATTENTE)
+  reference         String       @unique // notre référence envoyée au fournisseur
+  providerReference String?      // référence opérateur
+  error             String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @default(now()) @updatedAt
+  walletEntries     WalletEntry[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("payouts")
+}
+
+enum RoleRequestStatus {
+  EN_ATTENTE
+  A_ACTIVER   // approuvée par l'admin : le rôle ne change qu'au clic sur le lien reçu par e-mail
+  APPROUVEE
+  REFUSEE
+  ANNULEE
+}
+
+// Demande d'un client pour devenir COMMERCANT ou LIVREUR. Le rôle ne change qu'à l'approbation d'un administrateur,
+// qui enregistre aussi le numéro de retrait (Mobile Money) donné ici.
+model RoleRequest {
+  id              Int               @id @default(autoincrement())
+  userId          Int
+  user            User              @relation("RoleRequestApplicant", fields: [userId], references: [id])
+  requestedRole   Role
+  payoutPhone     String
+  message         String?
+  status          RoleRequestStatus @default(EN_ATTENTE)
+  decidedById     Int?
+  decidedBy       User?             @relation("RoleRequestDecider", fields: [decidedById], references: [id])
+  decidedAt       DateTime?
+  rejectionReason String?
+  activationTokenHash String?       @unique // empreinte SHA-256 du jeton d'activation envoyé par e-mail
+  activationExpiresAt DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @default(now()) @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("role_requests")
+}
+
+model AuditLog {
+  id            Int      @id @default(autoincrement())
+  actorId       Int?     // null = action système (ex. futur webhook GoalPay)
+  actor         User?    @relation(fields: [actorId], references: [id])
+  action        String
+  entityType    String
+  entityId      Int
+  previousValue String?
+  newValue      String?
+  createdAt     DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+// Remboursement manuel d'un client dont la livraison a échoué après paiement. Une seule ligne par
+// commande (orderId unique) : c'est ce qui empêche de rembourser deux fois et qui permet à
+// l'administration de savoir qu'une réclamation a déjà été traitée.
+model Refund {
+  id        Int      @id @default(autoincrement())
+  orderId   Int      @unique
+  order     Order    @relation(fields: [orderId], references: [id])
+  amount    Int      // montant remboursé = montant payé par le client
+  reference String   // référence de la transaction Mobile Money faite par l'administrateur
+  note      String?
+  adminId   Int
+  admin     User     @relation("RefundAdmin", fields: [adminId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@map("refunds")
+}
