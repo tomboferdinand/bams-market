@@ -141,3 +141,38 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# ---------------------------------------------------------------------------
+# Ajouts propres à Bam'S Market
+# ---------------------------------------------------------------------------
+
+# Client Prisma généré : se recrée avec `npx prisma generate` (dans backend/)
+generated/
+
+# Sorties de tests
+test-results/
+playwright-report/
+blob-report/
+
+# Fichier généré par Next.js
+next-env.d.ts
+
+# Fichiers téléversés en local (photos de produits, etc.)
+uploads/
+
+# Dossiers d'éditeur et d'assistants IA (réglages personnels, parfois des secrets)
+.vscode/
+.idea/
+.agents/
+.claude/
+.cursor/
+.devin/
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Fichiers de test manuel (cookies de session curl, corps de requête) : ne jamais publier
+cookies.txt
+*.cookies
+payload.json
