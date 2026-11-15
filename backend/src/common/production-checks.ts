@@ -18,7 +18,23 @@ export function productionConfigErrors(env: Env = process.env): string[] {
     }
   }
 
+  // Sans liste, tous les sites seraient autorisés à appeler l'API avec le cookie de session.
+  const origins = parseCorsOrigins(env.CORS_ORIGIN);
+  if (origins.length === 0) {
+    errors.push('CORS_ORIGIN est obligatoire en production (adresse du site, ex. https://mon-site.exemple).');
+  } else if (origins.some((o) => !/^https?:\/\/[^*\s/]+$/.test(o))) {
+    errors.push('CORS_ORIGIN ne doit contenir que des adresses complètes (https://…), sans "*" ni chemin.');
+  }
+
   return errors;
+}
+
+/** Liste des sites autorisés : valeurs séparées par des virgules, espaces et barre finale retirés. */
+export function parseCorsOrigins(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((o) => o.trim().replace(/\/+$/, ''))
+    .filter((o) => o.length > 0);
 }
 
 export function assertProductionConfig(env: Env = process.env): void {

@@ -5,15 +5,17 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { assertProductionConfig } from './common/production-checks';
+import { assertProductionConfig, parseCorsOrigins } from './common/production-checks';
 
 async function bootstrap() {
   assertProductionConfig(); // en production : refuse de démarrer avec un réglage dangereux
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api', { exclude: ['health'] }); // /health reste à la racine pour l'hébergeur
   app.use(cookieParser());
+  // En production CORS_ORIGIN est obligatoire (voir production-checks) ; en local, sans liste, tout est accepté.
+  const origins = parseCorsOrigins(process.env.CORS_ORIGIN);
   app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') ?? true,
+    origin: origins.length > 0 ? origins : true,
     credentials: true, // indispensable pour que le cookie soit envoyé/reçu cross-origin
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

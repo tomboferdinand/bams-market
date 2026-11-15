@@ -1,6 +1,6 @@
-import { assertProductionConfig, productionConfigErrors } from './production-checks';
+import { assertProductionConfig, parseCorsOrigins, productionConfigErrors } from './production-checks';
 
-const prod = { NODE_ENV: 'production', PAYMENT_MODE: 'goalpay', PAYOUT_MODE: 'simulation' };
+const prod = { NODE_ENV: 'production', PAYMENT_MODE: 'goalpay', PAYOUT_MODE: 'simulation', CORS_ORIGIN: 'https://site.exemple' };
 
 describe('Contrôles de configuration en production', () => {
   it("n'exige rien hors production : la simulation locale reste possible", () => {
@@ -30,5 +30,22 @@ describe('Contrôles de configuration en production', () => {
 
   it('accepte la simulation en production si elle est choisie explicitement', () => {
     expect(productionConfigErrors({ ...prod, PAYMENT_MODE: 'simulation' })).toEqual([]);
+  });
+
+  it('refuse de démarrer si CORS_ORIGIN est absent ou vide', () => {
+    expect(() => assertProductionConfig({ ...prod, CORS_ORIGIN: undefined })).toThrow(/CORS_ORIGIN/);
+    expect(() => assertProductionConfig({ ...prod, CORS_ORIGIN: ' , ' })).toThrow(/CORS_ORIGIN/);
+  });
+
+  it('refuse le joker et les adresses incomplètes', () => {
+    expect(productionConfigErrors({ ...prod, CORS_ORIGIN: '*' })).toHaveLength(1);
+    expect(productionConfigErrors({ ...prod, CORS_ORIGIN: 'site.exemple' })).toHaveLength(1);
+    expect(productionConfigErrors({ ...prod, CORS_ORIGIN: 'https://*.exemple' })).toHaveLength(1);
+  });
+
+  it('accepte plusieurs sites et nettoie espaces et barre finale', () => {
+    expect(parseCorsOrigins(' https://a.exemple/ , https://b.exemple ')).toEqual(['https://a.exemple', 'https://b.exemple']);
+    expect(productionConfigErrors({ ...prod, CORS_ORIGIN: 'https://a.exemple/, https://b.exemple' })).toEqual([]);
+    expect(parseCorsOrigins(undefined)).toEqual([]);
   });
 });
