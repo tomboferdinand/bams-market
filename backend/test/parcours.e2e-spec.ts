@@ -91,7 +91,7 @@ describe('Parcours complet Bam\'S Market (E2E)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
+    app.setGlobalPrefix('api', { exclude: ['health'] });
     app.use(cookieParser());
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
@@ -114,8 +114,8 @@ describe('Parcours complet Bam\'S Market (E2E)', () => {
 
   // ───────────────────────── Santé & authentification ─────────────────────────
   describe('Authentification et permissions', () => {
-    it('GET /api/db-test répond 200', async () => {
-      await request(server).get('/api/db-test').expect(200);
+    it('GET /health répond 200', async () => {
+      await request(server).get('/health').expect(200);
     });
 
     it('refuse un mot de passe trop faible', async () => {

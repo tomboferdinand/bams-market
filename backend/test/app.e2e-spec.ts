@@ -12,14 +12,17 @@ describe('AppController (e2e)', () => {
         }).compile();
 
         app = moduleFixture.createNestApplication();
-        app.setGlobalPrefix('api'); // Applique le préfixe global
+        app.setGlobalPrefix('api', { exclude: ['health'] }); // comme dans main.ts
         await app.init();
     });
 
-    it('/api/db-test (GET)', () => {
-        return request(app.getHttpServer())
-            .get('/api/db-test') // 👈 On pointe sur la vraie route existante
-            .expect(200);
+    it('/health (GET) répond sans aucune donnée', async () => {
+        const res = await request(app.getHttpServer()).get('/health').expect(200);
+        expect(res.body).toEqual({ status: 'ok' });
+    });
+
+    it("l'ancienne route /api/db-test n'existe plus", () => {
+        return request(app.getHttpServer()).get('/api/db-test').expect(404);
     });
 
     afterAll(async () => {
