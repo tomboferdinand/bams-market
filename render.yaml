@@ -33,10 +33,12 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true  # longue valeur aléatoire créée par Render
+      # Premier déploiement : tout en simulation. Passer à "goalpay" dans le tableau de bord Render
+      # une fois le site vérifié (PAYMENT_MODE d'abord, PAYOUT_MODE quand le retrait réel sera prêt).
       - key: PAYMENT_MODE
-        value: goalpay       # paiement réel
+        value: simulation
       - key: PAYOUT_MODE
-        value: simulation    # retraits réels repoussés après la soutenance
+        value: simulation
       - key: TRUST_PROXY
         value: "1"           # à ajuster après le premier déploiement (voir la limite de débit)
       - key: CORS_ORIGIN
@@ -79,7 +81,11 @@ services:
       - key: NODE_VERSION
         value: 22.22.2
       # Les variables NEXT_PUBLIC_* sont figées au moment du build : toute modification demande un redéploiement.
+      # Le navigateur appelle /api sur le site lui-même ; le site transmet au backend (BACKEND_URL).
+      # Ainsi le cookie de session reste un cookie du site.
       - key: NEXT_PUBLIC_API_URL
-        sync: false
+        value: /api
+      - key: BACKEND_URL
+        sync: false          # adresse du backend, sans /api ni barre finale (lue au moment du build)
       - key: NEXT_PUBLIC_SUPPORT_EMAIL
         sync: false
