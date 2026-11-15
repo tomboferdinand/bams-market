@@ -28,6 +28,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
             message = typeof body === 'string' ? body : (body as { message?: string | string[] }).message ?? message;
         }
 
+        // Message de multer/body-parser (« File too large ») remplacé par un texte clair pour l'utilisateur.
+        if (status === HttpStatus.PAYLOAD_TOO_LARGE) {
+            message = 'Fichier trop volumineux : 5 Mo maximum par image.';
+        }
+
         if (status >= 500) {
             this.logger.error(
                 `${request.method} ${request.url} - ${JSON.stringify(message)}`,

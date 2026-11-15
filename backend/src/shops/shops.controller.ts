@@ -3,6 +3,7 @@ import {
     Query, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ImageFilePipe, imageUploadOptions } from '../common/upload/image-upload';
 import { ApiBearerAuth, ApiConsumes, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ShopsService } from './shops.service';
 import { CreateShopDto } from './dto/create-shop.dto';
@@ -24,11 +25,11 @@ export class ShopsController {
     @Post()
     @Roles(Role.COMMERCANT)
     @ApiConsumes('multipart/form-data')
-    @UseInterceptors(FileInterceptor('logo'))
+    @UseInterceptors(FileInterceptor('logo', imageUploadOptions))
     create(
         @CurrentUser() user: { id: number },
         @Body() dto: CreateShopDto,
-        @UploadedFile() logo?: Express.Multer.File,
+        @UploadedFile(ImageFilePipe) logo?: Express.Multer.File,
     ) {
         return this.shopsService.createMine(user.id, dto, logo?.buffer);
     }
@@ -42,11 +43,11 @@ export class ShopsController {
     @Patch('me')
     @Roles(Role.COMMERCANT)
     @ApiConsumes('multipart/form-data')
-    @UseInterceptors(FileInterceptor('logo'))
+    @UseInterceptors(FileInterceptor('logo', imageUploadOptions))
     updateMine(
         @CurrentUser() user: { id: number },
         @Body() dto: UpdateShopDto,
-        @UploadedFile() logo?: Express.Multer.File,
+        @UploadedFile(ImageFilePipe) logo?: Express.Multer.File,
     ) {
         return this.shopsService.updateMine(user.id, dto, logo?.buffer);
     }

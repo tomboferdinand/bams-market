@@ -3,6 +3,7 @@ import {
     Query, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ImageFilePipe, imageUploadOptions } from '../common/upload/image-upload';
 import { ApiBearerAuth, ApiConsumes, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -50,11 +51,11 @@ export class ProductsController {
     @ApiConsumes('multipart/form-data')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(Role.COMMERCANT)
-    @UseInterceptors(FileInterceptor('image'))
+    @UseInterceptors(FileInterceptor('image', imageUploadOptions))
     create(
         @CurrentUser() user: { id: number },
         @Body() dto: CreateProductDto,
-        @UploadedFile() image?: Express.Multer.File,
+        @UploadedFile(ImageFilePipe) image?: Express.Multer.File,
     ) {
         return this.productsService.create(user.id, dto, image?.buffer);
     }
@@ -64,12 +65,12 @@ export class ProductsController {
     @ApiConsumes('multipart/form-data')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(Role.COMMERCANT)
-    @UseInterceptors(FileInterceptor('image'))
+    @UseInterceptors(FileInterceptor('image', imageUploadOptions))
     update(
         @CurrentUser() user: { id: number },
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: UpdateProductDto,
-        @UploadedFile() image?: Express.Multer.File,
+        @UploadedFile(ImageFilePipe) image?: Express.Multer.File,
     ) {
         return this.productsService.update(user.id, id, dto, image?.buffer);
     }
