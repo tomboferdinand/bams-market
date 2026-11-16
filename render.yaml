@@ -1,20 +1,17 @@
-# Déploiement de Bam'S Market sur Render (Blueprint).
+# Déploiement de l'API Bam'S Market sur Render (Blueprint) — budget zéro.
+#   - API       : Render, plan gratuit (ce fichier)
+#   - Base      : Neon (PostgreSQL gratuit, Francfort)   -> DATABASE_URL
+#   - Site      : Vercel (dossier frontend/, avec BACKEND_URL)
+#   - E-mails   : Brevo en SMTP, port 2525 (Render gratuit bloque 25, 465 et 587)
 # Ce fichier ne contient AUCUN secret : les variables marquées "sync: false" sont à saisir
 # à la main dans le tableau de bord Render, à la création du Blueprint.
 
-databases:
-  - name: bams-market-db
-    plan: basic-256mb        # payant : sauvegardes incluses (le plan gratuit est supprimé après 30 jours)
-    region: frankfurt
-    databaseName: bams_market
-
 services:
-  # ───────────── API (NestJS) ─────────────
   - type: web
     name: bams-market-api
     runtime: node
-    plan: starter            # payant : toujours actif, indispensable pour recevoir le webhook GoalPay
-    region: frankfurt
+    plan: free               # s'endort après 15 min sans visite : prévoir un ping de /health (UptimeRobot)
+    region: frankfurt        # même région que la base Neon
     rootDir: backend
     # --include=dev : le build a besoin de @nestjs/cli et de TypeScript, même avec NODE_ENV=production.
     # prisma generate : le dossier generated/prisma n'est pas dans git.
@@ -27,10 +24,10 @@ services:
         value: 22.22.2
       - key: NODE_ENV
         value: production
+      # Adresse DIRECTE de Neon (hôte sans "-pooler"), avec sslmode=verify-full :
+      # prisma migrate deploy ne fonctionne pas à travers le pooler.
       - key: DATABASE_URL
-        fromDatabase:
-          name: bams-market-db
-          property: connectionString
+        sync: false
       - key: JWT_SECRET
         generateValue: true  # longue valeur aléatoire créée par Render
       # Premier déploiement : tout en simulation. Passer à "goalpay" dans le tableau de bord Render
@@ -41,8 +38,12 @@ services:
         value: simulation
       - key: TRUST_PROXY
         value: "1"           # à ajuster après le premier déploiement (voir la limite de débit)
+      # Balayage des commandes impayées toutes les 30 min au lieu de 60 s : une requête par minute
+      # empêcherait la base Neon de se mettre en veille et épuiserait son quota gratuit.
+      - key: EXPIRY_SWEEP_SECONDS
+        value: "1800"
       - key: CORS_ORIGIN
-        sync: false          # adresse du site (frontend), sans barre finale
+        sync: false          # adresse du site Vercel, sans barre finale
       - key: FRONTEND_URL
         sync: false          # même adresse : utilisée dans les liens des e-mails
       - key: GOALPAY_ACCESS_KEY
@@ -50,42 +51,18 @@ services:
       - key: GOALPAY_WEBHOOK_SECRET
         sync: false
       - key: SMTP_HOST
-        sync: false
+        value: smtp-relay.brevo.com
       - key: SMTP_PORT
-        sync: false
+        value: "2525"        # connexion chiffrée par STARTTLS
       - key: SMTP_USER
         sync: false
       - key: SMTP_PASS
         sync: false
       - key: SMTP_FROM
-        sync: false
+        sync: false          # expéditeur validé dans Brevo
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY
         sync: false
       - key: CLOUDINARY_API_SECRET
-        sync: false
-
-  # ───────────── Site (Next.js) ─────────────
-  - type: web
-    name: bams-market-web
-    runtime: node
-    plan: starter
-    region: frankfurt
-    rootDir: frontend
-    buildCommand: npm ci --include=dev && npm run build
-    # Render impose son propre port ($PORT) : on ne passe pas par "npm run start" (port 3001 fixe).
-    startCommand: npx next start -p $PORT
-    healthCheckPath: /
-    envVars:
-      - key: NODE_VERSION
-        value: 22.22.2
-      # Les variables NEXT_PUBLIC_* sont figées au moment du build : toute modification demande un redéploiement.
-      # Le navigateur appelle /api sur le site lui-même ; le site transmet au backend (BACKEND_URL).
-      # Ainsi le cookie de session reste un cookie du site.
-      - key: NEXT_PUBLIC_API_URL
-        value: /api
-      - key: BACKEND_URL
-        sync: false          # adresse du backend, sans /api ni barre finale (lue au moment du build)
-      - key: NEXT_PUBLIC_SUPPORT_EMAIL
         sync: false
