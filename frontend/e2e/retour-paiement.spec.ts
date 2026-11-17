@@ -20,6 +20,14 @@ test.describe("Retour de paiement GoalPay", () => {
     await page.waitForURL(/\/paiement\/retour\?r=canceled/);
     await expect(page.getByRole("heading", { name: "Paiement annulé" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Reprendre le paiement" })).toHaveAttribute("href", `/commande/${orderId}/paiement`);
+    await expect(page.getByText("Aucun montant n'a été débité pour cette commande.")).toBeVisible();
+    // Aide : lien e-mail vers l'administration, numéro de commande déjà dans l'objet (si NEXT_PUBLIC_SUPPORT_EMAIL est défini).
+    const aide = page.getByRole("link", { name: "Contacter l'administrateur" });
+    if (await aide.count()) {
+      const href = (await aide.getAttribute("href"))!;
+      expect(href.startsWith("mailto:")).toBe(true);
+      expect(decodeURIComponent(href)).toContain(`commande #${orderId}`);
+    }
 
     // 2. Même adresse « succès » sans paiement réel : la page ne valide rien (état réel = en attente).
     await page.goto("/transaction/done");
@@ -36,5 +44,6 @@ test.describe("Retour de paiement GoalPay", () => {
     await pool.query(`UPDATE payments SET status = 'ECHOUEE' WHERE "orderId" = $1`, [orderId]);
     await page.goto("/failed");
     await expect(page.getByRole("heading", { name: "Le paiement n'a pas abouti" })).toBeVisible();
+    await expect(page.getByText("Aucun montant n'a été débité pour cette commande.")).toBeVisible();
   });
 });

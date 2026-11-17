@@ -6,8 +6,12 @@ import Link from "next/link";
 import { getLatestPayment, type LatestPayment } from "@/services/payment.service";
 import { ApiError } from "@/services/api";
 import { LoadingState } from "@/components/feedback/data-states";
+import { supportMailto } from "@/features/payments/support-mailto";
 
 type Hint = "success" | "canceled" | "failed";
+
+// Adresse de contact de l'administration (optionnelle) : NEXT_PUBLIC_SUPPORT_EMAIL.
+const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
 
 const POLL_MS = 2000;
 const POLL_MAX = 20; // ~40 s : le webhook GoalPay arrive en général en quelques secondes
@@ -55,6 +59,8 @@ function ReturnContent() {
   let title = "Vérification de votre paiement…";
   let message = "Nous attendons la confirmation de GoalPay. Ne fermez pas cette page.";
   let loading = true;
+  // Vrai seulement quand notre serveur sait que la commande n'est pas payée (aucun paiement validé).
+  let notDebited = false;
 
   if (error) {
     title = "Paiement à vérifier";
@@ -64,10 +70,12 @@ function ReturnContent() {
     loading = false; // VALIDEE redirige ; ECHOUEE / EXPIREE affichés ci-dessous
     title = (payment.status as string) === "EXPIREE" ? "Délai de paiement dépassé" : "Le paiement n'a pas abouti";
     message = "Cette commande n'a pas été payée. Vous pouvez la consulter ou repasser commande.";
+    notDebited = true;
   } else if (payment && pending && hint !== "success") {
     loading = false;
     title = hint === "canceled" ? "Paiement annulé" : "Le paiement n'a pas abouti";
     message = "Votre commande n'est pas payée. Vous pouvez reprendre le paiement tant que le lien est valable.";
+    notDebited = true;
   } else if (timedOut) {
     loading = false;
     title = "Confirmation en cours";
@@ -80,6 +88,11 @@ function ReturnContent() {
         {loading && <LoadingState label="Chargement..." />}
         <h1 className="mb-2 mt-2 text-xl font-bold text-primary">{title}</h1>
         <p className="mb-6 text-sm text-on-surface-variant">{message}</p>
+        {notDebited && (
+          <p className="-mt-3 mb-6 rounded-lg bg-surface-container px-3 py-2 text-sm font-medium text-on-surface">
+            Aucun montant n&apos;a été débité pour cette commande.
+          </p>
+        )}
 
         {!loading && (
           <div className="w-full space-y-3">
@@ -99,6 +112,14 @@ function ReturnContent() {
             <Link href="/catalogue" className="block text-center text-sm text-on-surface-variant hover:text-primary hover:underline">
               Retour au catalogue
             </Link>
+            {SUPPORT_EMAIL && (
+              <p className="border-t border-outline-variant pt-3 text-sm text-on-surface-variant">
+                Besoin d&apos;aide ?{" "}
+                <a href={supportMailto(SUPPORT_EMAIL, orderId)} className="font-semibold text-primary hover:underline">
+                  Contacter l&apos;administrateur
+                </a>
+              </p>
+            )}
           </div>
         )}
       </main>
