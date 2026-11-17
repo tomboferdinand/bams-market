@@ -115,6 +115,7 @@ export default function MerchantOrderDetailPage() {
                 <div className="border-b border-outline-variant p-6">
                   <h2 className="text-lg font-bold text-on-background">Articles commandés</h2>
                 </div>
+                <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead>
                     <tr className="border-b border-outline-variant bg-surface-container-low">
@@ -144,6 +145,7 @@ export default function MerchantOrderDetailPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
 

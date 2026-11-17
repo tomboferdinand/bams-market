@@ -43,3 +43,39 @@ test.describe("En-tête du site public sur mobile", () => {
     await expect(page.getByRole("navigation", { name: "Menu principal" }).getByRole("link", { name: "Connexion" })).toBeVisible();
   });
 });
+
+test.describe("Portails connectés sur mobile", () => {
+  test("commerçant : le tiroir s'ouvre, se ferme avec Échap, un clic à côté ou un changement de page", async ({ page }) => {
+    const merchant = await createUser("COMMERCANT", "Tiroir");
+    await loginUI(page, merchant);
+
+    const tiroir = page.getByRole("complementary", { name: "Navigation du portail" });
+    const ouvrir = page.getByRole("button", { name: "Ouvrir le menu" });
+    await expect(tiroir).not.toBeInViewport(); // masqué par défaut sur mobile
+
+    await ouvrir.click();
+    await expect(tiroir).toBeInViewport();
+    await page.keyboard.press("Escape");
+    await expect(tiroir).not.toBeInViewport();
+
+    await ouvrir.click();
+    await page.mouse.click(370, 400); // clic sur le fond, à droite du tiroir
+    await expect(tiroir).not.toBeInViewport();
+
+    await ouvrir.click();
+    await tiroir.getByRole("link", { name: "Commandes" }).click();
+    await page.waitForURL("**/commercant/commandes");
+    await expect(tiroir).not.toBeInViewport();
+  });
+});
+
+test.describe("Portails connectés sur ordinateur", () => {
+  test.use({ viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false });
+
+  test("la barre latérale reste affichée, sans bouton de menu", async ({ page }) => {
+    const merchant = await createUser("COMMERCANT", "Bureau");
+    await loginUI(page, merchant);
+    await expect(page.getByRole("complementary", { name: "Navigation du portail" })).toBeInViewport();
+    await expect(page.getByRole("button", { name: "Ouvrir le menu" })).toBeHidden();
+  });
+});

@@ -42,6 +42,7 @@ export default function DeliveryHistoryPage() {
 
       {deliveries && deliveries.length > 0 && (
         <div className="mt-6 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+          <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-outline-variant bg-surface-container-low">
@@ -76,6 +77,7 @@ export default function DeliveryHistoryPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </DashboardShell>

@@ -73,6 +73,7 @@ export default function AdminDashboardPage() {
             {data.recentPendingShops.length === 0 ? (
               <div className="p-6"><EmptyState label="Aucune demande en attente." /></div>
             ) : (
+              <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-outline-variant text-on-surface-variant">
@@ -97,6 +98,7 @@ export default function AdminDashboardPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </>
