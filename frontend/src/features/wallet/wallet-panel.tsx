@@ -224,9 +224,16 @@ export function WalletPanel() {
               aria-label="Montant à retirer"
             />
             {issue && <p className="text-xs text-error">{issue}</p>}
-            <p className="text-xs text-on-surface-variant">
-              Il vous reste {formatPrice(settings.dailyRemaining)} MGA à retirer aujourd&apos;hui (plafond sur 24 h).
-            </p>
+            {/* Le solde et le plafond sont deux choses différentes : on les affiche séparément. */}
+            <div className="space-y-0.5 text-xs text-on-surface-variant" data-testid="payout-limits">
+              <p>
+                Solde disponible : <strong className="text-on-surface">{formatPrice(wallet.available)} MGA</strong>
+              </p>
+              <p>
+                Plafond de retrait sur 24 h : {formatPrice(settings.dailyMaxAmount)} MGA (restant aujourd&apos;hui :{" "}
+                {formatPrice(settings.dailyRemaining)} MGA)
+              </p>
+            </div>
             <button className={BTN} disabled={busy || !amount}>Continuer</button>
           </form>
         ) : (
