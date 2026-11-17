@@ -52,6 +52,16 @@ test.describe("Demandes de rôle", () => {
 
     await page.getByRole("button", { name: "Accéder à mon espace" }).click();
     await page.waitForURL("**/commercant/dashboard");
+
+    // 5. Le journal d'activité affiche des libellés français, jamais les codes techniques.
+    const journalContext = await browser.newContext();
+    const journal = await journalContext.newPage();
+    await loginUI(journal, admin);
+    await journal.goto("/admin/journal");
+    await expect(journal.getByText("Rôle modifié : Client → Commerçant").first()).toBeVisible();
+    await expect(journal.getByText("En attente → Lien d'activation envoyé (Commerçant)").first()).toBeVisible();
+    await expect(journal.getByText(/USER_ROLE_CHANGED|ROLE_REQUEST_APPROVED|A_ACTIVER:/)).toHaveCount(0);
+    await journalContext.close();
   });
 
   test("un lien d'activation invalide affiche une erreur claire", async ({ page }) => {

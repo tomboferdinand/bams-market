@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, Store, UserCog, ShoppingCart, CreditCard, ScrollText } from "lucide-react";
+import { Search, Store, UserCog, ShoppingCart, CreditCard, ScrollText, Wallet, BadgeCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { ADMIN_NAV } from "@/features/dashboard/nav-items";
@@ -9,20 +9,19 @@ import { useRequireRole } from "@/features/auth/hooks/use-require-role";
 import { LoadingState, EmptyState, ErrorState } from "@/components/feedback/data-states";
 import { Pagination } from "@/components/tables/pagination";
 import { getAuditLogs } from "@/services/admin.service";
-import { ROLE_LABEL, labelForValue } from "@/features/admin/labels";
+import { ROLE_LABEL } from "@/features/admin/labels";
+import { AUDIT_ACTION_LABEL, AUDIT_ENTITY_LABEL, auditToneValue, describeAuditDetails } from "@/features/admin/audit-labels";
 import { formatDateTime, initials } from "@/lib/format";
 import type { AuditLogEntry } from "@/types/admin";
 
-const ACTION_META: Record<string, { label: string; icon: LucideIcon }> = {
-  SHOP_STATUS_CHANGE: { label: "Statut boutique", icon: Store },
-  USER_STATUS_CHANGE: { label: "Statut compte", icon: UserCog },
-  ORDER_STATUS_CHANGE: { label: "Statut commande", icon: ShoppingCart },
-  PAYMENT_STATUS_CHANGE: { label: "Statut paiement", icon: CreditCard },
+// Libellés français : voir features/admin/audit-labels (affichage seulement, les données restent inchangées).
+const ENTITY_ICON: Record<string, LucideIcon> = {
+  Shop: Store, User: UserCog, Order: ShoppingCart, Payment: CreditCard, Payout: Wallet, RoleRequest: BadgeCheck,
 };
-const ENTITY_LABEL: Record<string, string> = { Shop: "Boutique", User: "Utilisateur", Order: "Commande", Payment: "Paiement" };
+const ENTITY_LABEL = AUDIT_ENTITY_LABEL;
 
 const POSITIVE = ["VALIDEE", "ACTIF", "PAYEE", "LIVREE"];
-const NEGATIVE = ["SUSPENDUE", "SUSPENDU", "DESACTIVE", "INACTIVE", "ANNULEE", "ECHOUEE", "EXPIREE"];
+const NEGATIVE = ["REFUSEE", "SUSPENDUE", "SUSPENDU", "DESACTIVE", "INACTIVE", "ANNULEE", "ECHOUEE", "EXPIREE"];
 function tone(value: string | null) {
   if (value && POSITIVE.includes(value)) return "bg-primary-container text-on-primary-container";
   if (value && NEGATIVE.includes(value)) return "bg-error-container text-on-error-container";
@@ -73,7 +72,7 @@ export default function AdminJournalPage() {
   return (
     <DashboardShell title="Bam'S Market" portalLabel="Back-office" navItems={ADMIN_NAV} activeHref="/admin/journal">
       <h1 className="text-2xl font-bold text-on-background md:text-3xl">Journal d&apos;activité</h1>
-      <p className="mt-1 text-on-surface-variant">Traçabilité des changements de statut critiques (boutiques, comptes, commandes, paiements).</p>
+      <p className="mt-1 text-on-surface-variant">Traçabilité des changements critiques (boutiques, comptes, commandes, paiements, retraits, rôles).</p>
 
       <div className="mt-6 flex flex-wrap items-end gap-4 rounded-xl border border-outline-variant bg-surface p-4 shadow-sm">
         <div className="min-w-[180px] flex-1">
@@ -124,7 +123,8 @@ export default function AdminJournalPage() {
               </thead>
               <tbody className="divide-y divide-outline-variant text-sm">
                 {pageItems.map((l) => {
-                  const meta = ACTION_META[l.action] ?? { label: l.action, icon: ScrollText };
+                  const Icon = ENTITY_ICON[l.entityType] ?? ScrollText;
+                  const actionLabel = AUDIT_ACTION_LABEL[l.action] ?? l.action;
                   return (
                     <tr key={l.id} className="hover:bg-surface-container-lowest">
                       <td className="whitespace-nowrap px-6 py-4 text-on-surface">{formatDateTime(l.createdAt)}</td>
@@ -140,15 +140,15 @@ export default function AdminJournalPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${tone(l.newValue)}`}>
-                          <meta.icon size={14} /> {meta.label}
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${tone(auditToneValue(l))}`}>
+                          <Icon size={14} /> {actionLabel}
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         <p className="font-medium text-on-surface">{ENTITY_LABEL[l.entityType] ?? l.entityType} #{l.entityId}</p>
                       </td>
                       <td className="px-6 py-4 text-on-surface-variant">
-                        {labelForValue(l.previousValue)} → <span className="font-semibold text-on-surface">{labelForValue(l.newValue)}</span>
+                        {describeAuditDetails(l)}
                       </td>
                     </tr>
                   );
