@@ -36,4 +36,8 @@ export interface Order {
 export interface MerchantOrder extends Omit<Order, "address"> {
   address: { id: number; label: string; city: string };
   user: { firstName: string; lastName: string };
+  /** Répartition figée à la création de la commande (BR-PAY-04) : commission sur le sous-total. */
+  commissionPercent?: number;
+  commissionAmount?: number;
+  merchantAmount?: number;
 }

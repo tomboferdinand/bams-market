@@ -14,6 +14,19 @@ export function shopAmount(order: MerchantOrder) {
   return order.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
 }
 
+/**
+ * Passage des ventes brutes aux gains nets, à partir de la répartition figée sur chaque commande
+ * par le backend (aucun recalcul de la commission ici). Le taux n'est affiché que s'il est le même
+ * pour toutes les commandes (il peut avoir changé entre deux commandes).
+ */
+export function computeEarnings(paid: MerchantOrder[]) {
+  const gross = paid.reduce((sum, o) => sum + shopAmount(o), 0);
+  const commission = paid.reduce((sum, o) => sum + (o.commissionAmount ?? 0), 0);
+  const net = paid.reduce((sum, o) => sum + (o.merchantAmount ?? shopAmount(o) - (o.commissionAmount ?? 0)), 0);
+  const rates = new Set(paid.map((o) => o.commissionPercent).filter((r): r is number => typeof r === "number"));
+  return { gross, commission, net, commissionPercent: rates.size === 1 ? [...rates][0] : null };
+}
+
 export function computeMerchantStats(products: Product[], orders: MerchantOrder[]) {
   // Dédoublonnage défensif par identifiant de commande
   const unique = Array.from(new Map(orders.map((o) => [o.id, o])).values());
@@ -29,5 +42,6 @@ export function computeMerchantStats(products: Product[], orders: MerchantOrder[
     toPrepare: paid.filter((o) => o.status === "PAYEE").length,
     revenue: paid.reduce((sum, o) => sum + shopAmount(o), 0),
     recentOrders,
+    earnings: computeEarnings(paid),
   };
 }

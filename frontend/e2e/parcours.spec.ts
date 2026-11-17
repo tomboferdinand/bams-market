@@ -60,6 +60,13 @@ test.describe.serial("Parcours complet : achat → paiement simulé → prépara
     await page.getByRole("button", { name: "Marquer comme prête pour expédition" }).click();
     await expect(page.getByText("Action confirmée")).toBeVisible();
     expect((await orderRow(orderId)).status).toBe("EN_PREPARATION");
+
+    // Tableau de bord : passage des ventes brutes aux gains nets (commission de 10 % sur 15 000).
+    await page.goto("/commercant/dashboard");
+    const detail = page.getByTestId("earnings-breakdown");
+    await expect(detail).toContainText(/Ventes brutes\s*15\s?000\s?MGA/);
+    await expect(detail).toContainText(/commission Bam'S Market \(10\s?%\)\s*1\s?500\s?MGA/);
+    await expect(detail).toContainText(/Gains nets\s*13\s?500\s?MGA/);
   });
 
   test("4. livreur : accepte la mission", async ({ page }) => {

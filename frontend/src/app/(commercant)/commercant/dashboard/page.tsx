@@ -103,6 +103,26 @@ export default function CommercantDashboardPage() {
             />
           </div>
 
+          {/* Écart entre ventes brutes et gains : la commission de la plateforme. */}
+          <div className="mb-6 rounded-lg border border-outline-variant bg-surface p-4 shadow-sm" data-testid="earnings-breakdown">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-on-surface-variant">De vos ventes à vos gains</h2>
+            <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-on-surface">
+              <span>Ventes brutes <strong>{formatPrice(stats.earnings.gross)} MGA</strong></span>
+              <span aria-hidden>−</span>
+              <span>
+                commission Bam&apos;S Market
+                {stats.earnings.commissionPercent !== null && ` (${stats.earnings.commissionPercent} %)`}{" "}
+                <strong>{formatPrice(stats.earnings.commission)} MGA</strong>
+              </span>
+              <span aria-hidden>=</span>
+              <span>Gains nets <strong className="text-primary">{formatPrice(stats.earnings.net)} MGA</strong></span>
+            </p>
+            <p className="mt-2 text-xs text-on-surface-variant">
+              La commission est prélevée sur le prix de vos articles, jamais sur la livraison. Vos gains nets sont crédités sur
+              votre solde à chaque livraison confirmée.
+            </p>
+          </div>
+
           <WalletPanel />
 
           <div className="overflow-hidden rounded-lg border border-outline-variant bg-surface shadow-sm">

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeMerchantStats, shopAmount, PAID_STATUSES } from "./merchant-stats";
+import { computeMerchantStats, computeEarnings, shopAmount, PAID_STATUSES } from "./merchant-stats";
 import type { MerchantOrder, OrderStatus } from "@/types/order";
 import type { Product } from "@/types/product";
 
@@ -45,6 +45,7 @@ describe("computeMerchantStats", () => {
       toPrepare: 0,
       revenue: 0,
       recentOrders: [],
+      earnings: { gross: 0, commission: 0, net: 0, commissionPercent: null },
     });
   });
 
@@ -110,5 +111,41 @@ describe("computeMerchantStats", () => {
     const orders = [order(1, "PAYEE", "2026-01-01"), order(2, "PAYEE", "2026-01-02")];
     computeMerchantStats([], orders);
     expect(orders.map((o) => o.id)).toEqual([1, 2]);
+  });
+});
+
+describe("computeEarnings (ventes brutes → gains nets)", () => {
+  const withShare = (o: MerchantOrder, commissionAmount: number, commissionPercent = 10) =>
+    ({ ...o, commissionPercent, commissionAmount, merchantAmount: shopAmount(o) - commissionAmount }) as MerchantOrder;
+
+  it("reprend la commission figée sur chaque commande : 2 000 − 200 = 1 800", () => {
+    const e = computeEarnings([withShare(order(1, "PAYEE", "2026-01-01", [[2000, 1]]), 200)]);
+    expect(e).toEqual({ gross: 2000, commission: 200, net: 1800, commissionPercent: 10 });
+  });
+  it("additionne plusieurs commandes", () => {
+    const e = computeEarnings([
+      withShare(order(1, "PAYEE", "2026-01-01", [[2000, 1]]), 200),
+      withShare(order(2, "LIVREE", "2026-01-02", [[1500, 2]]), 300),
+    ]);
+    expect(e).toEqual({ gross: 5000, commission: 500, net: 4500, commissionPercent: 10 });
+  });
+  it("taux différents entre commandes : pas de pourcentage affiché", () => {
+    const e = computeEarnings([
+      withShare(order(1, "PAYEE", "2026-01-01", [[1000, 1]]), 100, 10),
+      withShare(order(2, "PAYEE", "2026-01-02", [[1000, 1]]), 50, 5),
+    ]);
+    expect(e.commissionPercent).toBeNull();
+    expect(e.net).toBe(1850);
+  });
+  it("sans commande : tout à zéro", () => {
+    expect(computeEarnings([])).toEqual({ gross: 0, commission: 0, net: 0, commissionPercent: null });
+  });
+  it("computeMerchantStats expose le détail des commandes payées seulement", () => {
+    const stats = computeMerchantStats([], [
+      withShare(order(1, "PAYEE", "2026-01-01", [[2000, 1]]), 200),
+      withShare(order(2, "ANNULEE", "2026-01-02", [[9000, 1]]), 900),
+    ]);
+    expect(stats.earnings).toEqual({ gross: 2000, commission: 200, net: 1800, commissionPercent: 10 });
+    expect(stats.revenue).toBe(stats.earnings.gross);
   });
 });
