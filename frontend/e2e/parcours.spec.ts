@@ -105,6 +105,13 @@ test.describe.serial("Parcours complet : achat → paiement simulé → prépara
     expect((await orderRow(orderId)).status).toBe("LIVREE");
   });
 
+  test("5b. commerçant : la colonne « Vendus » compte la commande livrée", async ({ page }) => {
+    await loginUI(page, merchant);
+    await page.goto("/commercant/produits");
+    const row = page.getByRole("row", { name: new RegExp(PRODUCT) });
+    await expect(row.getByTestId("sold-quantity")).toHaveText("1");
+  });
+
   test("6. client : voit sa commande livrée", async ({ page }) => {
     await loginUI(page, client);
     await page.goto(`/commande/${orderId}`);

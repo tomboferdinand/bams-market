@@ -64,11 +64,21 @@ export class ProductsService {
 
     async findMine(ownerId: number) {
         const shop = await this.shopsService.findMine(ownerId);
-        return this.prisma.product.findMany({
+        const products = await this.prisma.product.findMany({
             where: { shopId: shop.id },
             include: { category: true },
             orderBy: { createdAt: 'desc' },
         });
+        if (products.length === 0) return [];
+
+        // Quantité vendue = articles des commandes LIVRÉES uniquement (ni en cours, ni échouées, ni annulées).
+        const sold = await this.prisma.orderItem.groupBy({
+            by: ['productId'],
+            where: { productId: { in: products.map((p) => p.id) }, order: { status: 'LIVREE' } },
+            _sum: { quantity: true },
+        });
+        const soldById = new Map(sold.map((row) => [row.productId, row._sum.quantity ?? 0]));
+        return products.map((p) => ({ ...p, soldQuantity: soldById.get(p.id) ?? 0 }));
     }
 
     async update(ownerId: number, productId: number, dto: UpdateProductDto, imageBuffer?: Buffer) {

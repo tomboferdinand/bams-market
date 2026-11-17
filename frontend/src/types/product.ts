@@ -24,4 +24,6 @@ export interface Product {
     shopId: number;
     shop: ProductShop;
     createdAt: string;
+    /** Espace commerçant seulement : quantité vendue (commandes livrées). */
+    soldQuantity?: number;
 }

@@ -132,6 +132,7 @@ export default function ProductsListPage() {
                   <th className="px-6 py-4 text-xs font-medium text-on-surface-variant">Catégorie</th>
                   <th className="px-6 py-4 text-xs font-medium text-on-surface-variant">Prix (MGA)</th>
                   <th className="px-6 py-4 text-xs font-medium text-on-surface-variant">Stock</th>
+                  <th className="px-6 py-4 text-xs font-medium text-on-surface-variant" title="Quantités des commandes livrées">Vendus</th>
                   <th className="px-6 py-4 text-xs font-medium text-on-surface-variant">Statut</th>
                   <th className="px-6 py-4 text-right text-xs font-medium text-on-surface-variant">Actions</th>
                 </tr>
@@ -161,6 +162,7 @@ export default function ProductsListPage() {
                     <td className="px-6 py-4 text-on-surface-variant">{p.category.name}</td>
                     <td className="px-6 py-4 font-semibold text-primary">{formatPrice(p.price)}</td>
                     <td className={`px-6 py-4 ${p.stock === 0 ? "font-medium text-error" : "text-on-surface"}`}>{p.stock}</td>
+                    <td className="px-6 py-4 text-on-surface" data-testid="sold-quantity">{p.soldQuantity ?? 0}</td>
                     <td className="px-6 py-4"><ProductStatusBadge product={p} /></td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
