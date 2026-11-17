@@ -44,6 +44,13 @@ const ORDER_SELECT_AVAILABLE = {
   user: { select: { firstName: true } },
 };
 
+// Mission terminée (livrée ou échouée) : le livreur n'a plus besoin des coordonnées du client.
+// Historique et réponses de fin de mission : nom et zone seulement, jamais le téléphone ni l'adresse exacte.
+const ORDER_SELECT_FINISHED = {
+  ...ORDER_SELECT_AVAILABLE,
+  user: { select: { firstName: true, lastName: true } },
+};
+
 @Injectable()
 export class DeliveriesService {
   private readonly logger = new Logger(DeliveriesService.name);
@@ -72,7 +79,7 @@ export class DeliveriesService {
   findHistory(livreurId: number) {
     return this.prisma.delivery.findMany({
       where: { livreurId, status: { in: ['LIVREE', 'ECHEC'] } },
-      include: { order: { select: ORDER_SELECT_FOR_LIVREUR } },
+      include: { order: { select: ORDER_SELECT_FINISHED } },
       orderBy: { deliveredAt: 'desc' },
     });
   }
@@ -218,7 +225,7 @@ export class DeliveriesService {
     // Relecture hors transaction.
     return this.prisma.delivery.findUnique({
       where: { id: deliveryId },
-      include: { order: { select: ORDER_SELECT_FOR_LIVREUR } },
+      include: { order: { select: ORDER_SELECT_FINISHED } },
     });
   }
 
@@ -266,7 +273,7 @@ export class DeliveriesService {
     // Relecture hors transaction.
     return this.prisma.delivery.findUnique({
       where: { id: deliveryId },
-      include: { order: { select: ORDER_SELECT_FOR_LIVREUR } },
+      include: { order: { select: ORDER_SELECT_FINISHED } },
     });
   }
 }

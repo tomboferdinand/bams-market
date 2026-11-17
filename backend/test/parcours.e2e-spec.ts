@@ -375,9 +375,13 @@ describe('Parcours complet Bam\'S Market (E2E)', () => {
       expect(again.status).toBe(400); // BR-LIV-05
     });
 
-    it('l’historique du livreur contient la livraison', async () => {
+    it('l’historique du livreur contient la livraison, sans téléphone ni adresse exacte du client', async () => {
       const res = await livreur.agent.get('/api/deliveries/history');
       expect(res.body.map((d: any) => d.id)).toContain(deliveryId);
+      const entry = res.body.find((d: any) => d.id === deliveryId);
+      expect(entry.order.user).not.toHaveProperty('phone');
+      expect(entry.order.address).not.toHaveProperty('fullAddress');
+      expect(entry.order.address).not.toHaveProperty('phone');
     });
 
     it('BR-PAY-04 : la livraison confirmée crédite le commerçant et le livreur, une seule fois', async () => {

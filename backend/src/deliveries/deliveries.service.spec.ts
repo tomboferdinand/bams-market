@@ -41,6 +41,16 @@ describe('DeliveriesService', () => {
     expect(select.user.select.phone).toBe(true);
   });
 
+  it("mission terminée : l'historique ne renvoie plus ni téléphone ni adresse exacte", async () => {
+    prisma.delivery.findMany.mockResolvedValue([]);
+    await service.findHistory(5);
+    const select = prisma.delivery.findMany.mock.calls[0][0].include.order.select;
+    expect(select.address).toEqual({ select: { label: true, city: true } });
+    expect(select.user).toEqual({ select: { firstName: true, lastName: true } });
+    expect(JSON.stringify(select)).not.toContain('phone');
+    expect(JSON.stringify(select)).not.toContain('fullAddress');
+  });
+
   describe('accept', () => {
     it('404 si la mission n’existe pas', async () => {
       prisma.delivery.findUnique.mockResolvedValue(null);
