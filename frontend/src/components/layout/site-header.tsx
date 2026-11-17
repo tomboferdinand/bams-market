@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ShoppingCart, Search, LogIn } from "lucide-react";
+import { ShoppingCart, Search, LogIn, Menu, X } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { useAuth } from "@/features/auth/auth-context";
 import { useCart } from "@/features/cart/cart-context";
@@ -15,6 +15,9 @@ export function SiteHeader() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Menu des petits écrans (bouton hamburger) : remplace la navigation et la connexion, masquées sous md.
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const mobileRef = useRef<HTMLDivElement>(null);
 
   // Le panier est réservé aux clients : on le masque pour les autres rôles connectés.
   const canUseCart = !user || user.role === "CLIENT";
@@ -24,9 +27,15 @@ export function SiteHeader() {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(false);
       }
+      if (mobileRef.current && !mobileRef.current.contains(event.target as Node)) {
+        setMobileOpen(false);
+      }
     }
     function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setMenuOpen(false);
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        setMobileOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleEscape);
@@ -35,6 +44,21 @@ export function SiteHeader() {
       document.removeEventListener("keydown", handleEscape);
     };
   }, []);
+
+  // Le menu mobile se referme à chaque changement de page.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  const mobileLink = (href: string, label: string, active: boolean) => (
+    <Link
+      href={href}
+      onClick={() => setMobileOpen(false)}
+      className={`block px-4 py-3 text-sm ${active ? "font-bold text-primary" : "text-on-surface-variant hover:bg-surface-container"}`}
+    >
+      {label}
+    </Link>
+  );
 
   return (
     <header className="sticky top-0 z-50 flex w-full items-center justify-between border-b border-outline-variant bg-surface px-4 py-4 shadow-sm backdrop-blur-sm md:px-8">
@@ -88,7 +112,7 @@ export function SiteHeader() {
         )}
 
         {user ? (
-          <div className="relative" ref={menuRef}>
+          <div className="relative hidden md:block" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
               aria-label="Menu du compte"
@@ -135,6 +159,56 @@ export function SiteHeader() {
             Connexion
           </Link>
         )}
+
+        <div className="relative md:hidden" ref={mobileRef}>
+          <button
+            onClick={() => setMobileOpen((v) => !v)}
+            aria-label={mobileOpen ? "Fermer le menu" : "Ouvrir le menu"}
+            aria-expanded={mobileOpen}
+            aria-controls="menu-mobile"
+            className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container hover:text-primary"
+          >
+            {mobileOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+
+          {mobileOpen && (
+            <nav
+              id="menu-mobile"
+              aria-label="Menu principal"
+              className="absolute right-0 mt-2 w-64 overflow-hidden rounded-lg border border-outline-variant bg-surface py-1 shadow-lg"
+            >
+              {user && (
+                <div className="border-b border-outline-variant px-4 py-3 text-sm">
+                  <p className="font-semibold text-on-surface">{user.firstName} {user.lastName}</p>
+                  <p className="text-xs text-on-surface-variant">{user.email ?? user.phone}</p>
+                </div>
+              )}
+              {mobileLink("/", "Accueil", pathname === "/")}
+              {mobileLink("/catalogue", "Catalogue", pathname === "/catalogue")}
+              {user?.role === "CLIENT" && mobileLink("/commande", "Mes Commandes", pathname.startsWith("/commande"))}
+              <div className="my-1 border-t border-outline-variant" />
+              {user ? (
+                <>
+                  {mobileLink(accountLinkFor(user.role).href, accountLinkFor(user.role).label, pathname === accountLinkFor(user.role).href)}
+                  <button
+                    onClick={() => {
+                      setMobileOpen(false);
+                      logout();
+                    }}
+                    className="block w-full px-4 py-3 text-left text-sm text-error hover:bg-error-container/20"
+                  >
+                    Déconnexion
+                  </button>
+                </>
+              ) : (
+                <>
+                  {mobileLink("/connexion", "Connexion", pathname === "/connexion")}
+                  {mobileLink("/inscription", "Inscription", pathname === "/inscription")}
+                </>
+              )}
+            </nav>
+          )}
+        </div>
       </div>
     </header>
   );
