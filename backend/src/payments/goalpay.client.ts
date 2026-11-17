@@ -12,7 +12,15 @@ export interface GoalpayCheckout {
   orderReference: string;
 }
 
-const DEFAULT_URL = 'https://api.goalpay.pro/api/payement/service'; // « payement » : orthographe de l'URL GoalPay
+// Adresse de base de l'API GoalPay (configurable par GOALPAY_API_URL). L'ancien domaine goalpay.pro
+// disparaît en décembre 2026 : l'API est désormais sur goalpay.mg.
+export const DEFAULT_GOALPAY_API_URL = 'https://api.goalpay.mg';
+const CHECKOUT_PATH = '/api/payement/service'; // « payement » : orthographe de l'URL GoalPay
+
+/** Adresse complète d'un service GoalPay à partir de l'adresse de base (une barre finale est tolérée). */
+export function goalpayUrl(path: string, base = process.env.GOALPAY_API_URL): string {
+  return new URL(path, base?.trim() || DEFAULT_GOALPAY_API_URL).toString();
+}
 const TIMEOUT_MS = 15_000;
 
 /**
@@ -33,7 +41,7 @@ export class GoalpayClient {
     amount: number;
     items: GoalpayItem[];
   }): Promise<GoalpayCheckout> {
-    const url = process.env.GOALPAY_API_URL || DEFAULT_URL;
+    const url = goalpayUrl(CHECKOUT_PATH);
 
     let res: Response;
     try {

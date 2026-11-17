@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { createHmac } from 'crypto';
 import { PaymentsService } from './payments.service';
-import { GoalpayClient } from './goalpay.client';
+import { DEFAULT_GOALPAY_API_URL, GoalpayClient, goalpayUrl } from './goalpay.client';
 import { diagnoseSignature, verifyWebhookSignature } from './goalpay-signature';
 import { makeAuditMock, makePrismaMock } from '../common/testing/mocks';
 
@@ -33,6 +33,22 @@ describe('Signature des webhooks GoalPay', () => {
   });
 });
 
+describe('Adresse de l\'API GoalPay', () => {
+  it('par défaut : api.goalpay.mg (plus jamais goalpay.pro)', () => {
+    expect(DEFAULT_GOALPAY_API_URL).toBe('https://api.goalpay.mg');
+    expect(goalpayUrl('/api/payement/service', undefined)).toBe('https://api.goalpay.mg/api/payement/service');
+    expect(goalpayUrl('/api/payement/service', '  ')).toBe('https://api.goalpay.mg/api/payement/service');
+  });
+  it('GOALPAY_API_URL remplace la base, avec ou sans barre finale', () => {
+    expect(goalpayUrl('/api/payement/service', 'https://api.exemple.test')).toBe('https://api.exemple.test/api/payement/service');
+    expect(goalpayUrl('/api/payement/service', 'https://api.exemple.test/')).toBe('https://api.exemple.test/api/payement/service');
+  });
+  it('une ancienne valeur complète (avec le chemin) donne la même adresse', () => {
+    expect(goalpayUrl('/api/payement/service', 'https://api.exemple.test/api/payement/service'))
+      .toBe('https://api.exemple.test/api/payement/service');
+  });
+});
+
 describe('GoalpayClient', () => {
   const original = { ...process.env };
   const realFetch = global.fetch;
@@ -44,14 +60,14 @@ describe('GoalpayClient', () => {
 
   it('envoie le jeton dans le corps, devise Ar, et lit la réponse', async () => {
     process.env.GOALPAY_ACCESS_KEY = 'TGPT_SECRETTOKEN';
-    process.env.GOALPAY_API_URL = 'https://goalpay.test/api/payement/service';
+    process.env.GOALPAY_API_URL = 'https://goalpay.test/';
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true, status: 200,
-      json: async () => ({ message: 'Success', data: { checkout_url: 'https://goalpay.pro/c/1', expires_in_minutes: 10, order_reference: 'REF_1' } }),
+      json: async () => ({ message: 'Success', data: { checkout_url: 'https://goalpay.mg/c/1', expires_in_minutes: 10, order_reference: 'REF_1' } }),
     });
     global.fetch = fetchMock as any;
     const res = await new GoalpayClient().createCheckout(input);
-    expect(res).toEqual({ checkoutUrl: 'https://goalpay.pro/c/1', expiresInMinutes: 10, orderReference: 'REF_1' });
+    expect(res).toEqual({ checkoutUrl: 'https://goalpay.mg/c/1', expiresInMinutes: 10, orderReference: 'REF_1' });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://goalpay.test/api/payement/service');
     expect(JSON.parse(init.body)).toEqual({
@@ -114,7 +130,7 @@ describe('PaymentsService – GoalPay', () => {
 
     it('crée la commande de paiement GoalPay avec le montant officiel et enregistre les références', async () => {
       prisma.order.findUnique.mockResolvedValue(order());
-      goalpay.createCheckout.mockResolvedValue({ checkoutUrl: 'https://goalpay.pro/c/1', expiresInMinutes: 10, orderReference: 'REF_9' });
+      goalpay.createCheckout.mockResolvedValue({ checkoutUrl: 'https://goalpay.mg/c/1', expiresInMinutes: 10, orderReference: 'REF_9' });
       prisma.payment.upsert.mockImplementation(async ({ create }: any) => ({ id: 1, ...create }));
 
       const payment = await service.initiate(1, 5);
@@ -127,14 +143,14 @@ describe('PaymentsService – GoalPay', () => {
         { label: 'Frais de livraison', unit_price: 2000, quantity: 1 },
       ]);
       expect(payment).toMatchObject({
-        orderId: 5, amount: 17000, externalReference: 'REF_9', checkoutUrl: 'https://goalpay.pro/c/1', status: 'EN_ATTENTE',
+        orderId: 5, amount: 17000, externalReference: 'REF_9', checkoutUrl: 'https://goalpay.mg/c/1', status: 'EN_ATTENTE',
         merchantReference: call.reference,
       });
       expect(payment.expiresAt.getTime()).toBeGreaterThan(Date.now() + 10 * 60 * 1000); // marge webhook
     });
 
     it('réutilise le paiement en attente encore valide, sans nouvel appel GoalPay (BR-PAY-05)', async () => {
-      const pending = { id: 1, status: 'EN_ATTENTE', expiresAt: new Date(Date.now() + 60_000), checkoutUrl: 'https://goalpay.pro/c/1' };
+      const pending = { id: 1, status: 'EN_ATTENTE', expiresAt: new Date(Date.now() + 60_000), checkoutUrl: 'https://goalpay.mg/c/1' };
       prisma.order.findUnique.mockResolvedValue(order({ payment: pending }));
       expect(await service.initiate(1, 5)).toBe(pending);
       expect(goalpay.createCheckout).not.toHaveBeenCalled();

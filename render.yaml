@@ -46,6 +46,9 @@ services:
         sync: false          # adresse du site Vercel, sans barre finale
       - key: FRONTEND_URL
         sync: false          # même adresse : utilisée dans les liens des e-mails
+      # Adresse de base de l'API GoalPay (l'ancien domaine goalpay.pro disparaît en décembre 2026).
+      - key: GOALPAY_API_URL
+        value: https://api.goalpay.mg
       - key: GOALPAY_ACCESS_KEY
         sync: false
       - key: GOALPAY_WEBHOOK_SECRET

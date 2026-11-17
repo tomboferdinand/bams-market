@@ -61,7 +61,7 @@ npx playwright test         # parcours navigateur (lance le backend compilé : `
 
 ## Mode démonstration
 
-Avec `PAYMENT_MODE=simulation` et `PAYOUT_MODE=simulation`, le paiement et les retraits sont simulés : le parcours complet (commande, paiement, préparation, livraison, crédit, retrait) se déroule sans argent réel. Pour un usage réel, passer `PAYMENT_MODE=goalpay` et renseigner les clés GoalPay.
+Avec `PAYMENT_MODE=simulation` et `PAYOUT_MODE=simulation`, le paiement et les retraits sont simulés : le parcours complet (commande, paiement, préparation, livraison, crédit, retrait) se déroule sans argent réel. Pour un usage réel, passer `PAYMENT_MODE=goalpay` et renseigner les clés GoalPay ; l'adresse de l'API est réglée par `GOALPAY_API_URL` (par défaut `https://api.goalpay.mg`, l'ancien domaine goalpay.pro disparaissant en décembre 2026).
 
 ## Documentation
 
