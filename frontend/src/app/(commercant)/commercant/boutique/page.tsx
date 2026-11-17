@@ -48,7 +48,7 @@ export default function BoutiquePage() {
             <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center" >
                 <div>
                 <h2 className="text-2xl font-bold text-on-background" > Ma Boutique </h2>
-                    < p className = "mt-1 text-on-surface-variant" > Gérez les informations et l & apos;apparence de votre boutique.</p>
+                    < p className = "mt-1 text-on-surface-variant" > Gérez les informations et l&apos;apparence de votre boutique.</p>
                         </div>
     { shop && <ShopStatusBadge status={ shop.status } /> }
     </div>
