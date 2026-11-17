@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
-import { CheckCircle2, PackageOpen, Truck, PartyPopper, Clock, XCircle, ImageOff, MapPin, CheckCircle, KeyRound } from "lucide-react";
+import { CheckCircle2, PackageOpen, Truck, PartyPopper, Clock, XCircle, ImageOff, MapPin, CheckCircle, KeyRound, Mail } from "lucide-react";
 import { SiteHeader } from "@/components/layout/site-header";
 import { LoadingState, ErrorState } from "@/components/feedback/data-states";
 import { OrderStatusBadge } from "@/features/orders/components/order-status-badge";
@@ -15,6 +15,7 @@ import { useCart } from "@/features/cart/cart-context";
 import { reorderItems } from "@/features/orders/reorder";
 import { failureKind } from "@/features/orders/failure-kind";
 import { unpaidDeadline } from "@/features/orders/order-tabs";
+import { refundMailto } from "@/features/payments/support-mailto";
 
 // Adresse de contact de l'administration (optionnelle) : NEXT_PUBLIC_SUPPORT_EMAIL dans frontend/.env.local.
 const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
@@ -125,17 +126,19 @@ export default function OrderDetailPage() {
                                         </p>
                                     )}
                                     {failure === "delivery" && !order.refund && (
-                                        <p className="mt-1 text-sm">
-                                            Votre paiement a bien été reçu. Contactez l&apos;administration pour être remboursé, en indiquant uniquement le numéro de commande #{order.id} (le montant est connu du système).{" "}
+                                        <>
+                                            <p className="mt-1 text-sm">
+                                                Votre paiement a bien été reçu. Contactez l&apos;administration pour être remboursé, en indiquant uniquement le numéro de commande #{order.id} (le montant est connu du système).
+                                            </p>
                                             {SUPPORT_EMAIL && (
                                                 <a
-                                                    href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Remboursement commande #${order.id}`)}`}
-                                                    className="font-semibold underline"
+                                                    href={refundMailto(SUPPORT_EMAIL, order.id)}
+                                                    className="mt-3 inline-flex items-center gap-2 rounded-md border border-current px-4 py-2 text-sm font-semibold hover:bg-error-container/30"
                                                 >
-                                                    Contacter l&apos;administration
+                                                    <Mail size={16} aria-hidden /> Contacter l&apos;administration
                                                 </a>
                                             )}
-                                        </p>
+                                        </>
                                     )}
                                 </div>
                                 <button
