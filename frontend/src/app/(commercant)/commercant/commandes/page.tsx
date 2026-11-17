@@ -25,6 +25,7 @@ const TABS: { label: string; value: OrderStatus | "" }[] = [
   { label: "En préparation", value: "EN_PREPARATION" },
   { label: "En cours de livraison", value: "EN_COURS_DE_LIVRAISON" },
   { label: "Livrées", value: "LIVREE" },
+  { label: "Échouées", value: "ECHOUEE" }, // livraison échouée : stock restitué, aucun gain
 ];
 
 const PAGE_SIZE = 10;

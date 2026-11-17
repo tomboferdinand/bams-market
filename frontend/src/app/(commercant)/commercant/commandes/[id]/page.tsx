@@ -87,6 +87,17 @@ export default function MerchantOrderDetailPage() {
           )}
           {error && order && <p className="mb-4 text-sm text-error">{error}</p>}
 
+          {/* Seules les commandes dont la livraison a échoué arrivent ici avec ce statut (jamais un paiement échoué). */}
+          {order.status === "ECHOUEE" && (
+            <div className="mb-4 rounded-lg border border-error/30 bg-error-container/20 p-4 text-sm text-on-surface" data-testid="failed-order-note">
+              <p className="font-semibold">La livraison de cette commande a échoué.</p>
+              <p className="mt-1 text-on-surface-variant">
+                Le stock des articles a été restitué automatiquement. Aucun gain n&apos;est crédité pour cette commande ; le
+                remboursement du client est géré par l&apos;administration.
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-gutter lg:grid-cols-3">
             <div className="flex flex-col gap-gutter lg:col-span-2">
               <div className="rounded-xl border border-outline-variant bg-surface p-6 shadow-sm">

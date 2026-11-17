@@ -14,6 +14,16 @@ export const MERCHANT_VISIBLE_STATUSES: OrderStatus[] = [
     'PAYEE', 'EN_PREPARATION', 'EN_COURS_DE_LIVRAISON', 'LIVREE',
 ];
 
+// Commandes visibles du commerçant : payées (statuts ci-dessus), plus celles dont la LIVRAISON a échoué
+// (payées, stock restitué). Une commande ECHOUEE parce que le paiement a échoué ou expiré n'a pas de
+// mission en échec : elle reste cachée, comme toute commande jamais payée.
+export const MERCHANT_VISIBLE_WHERE = {
+    OR: [
+        { status: { in: MERCHANT_VISIBLE_STATUSES } },
+        { status: 'ECHOUEE' as OrderStatus, delivery: { is: { status: 'ECHEC' as const } } },
+    ],
+};
+
 // BR-LIV-04 : le code de confirmation n'est connu que du client propriétaire de la commande.
 const HIDE_CONFIRMATION_CODE = { confirmationCode: true } as const;
 
@@ -202,7 +212,7 @@ export class OrdersService {
         // mais le commerçant ne doit voir que ses propres lignes de commande (BR-SEC-03).
         const orders = await this.prisma.order.findMany({
             where: {
-                status: { in: MERCHANT_VISIBLE_STATUSES },
+                ...MERCHANT_VISIBLE_WHERE,
                 items: { some: { product: { shopId: shop.id } } },
             },
             include: {
@@ -223,7 +233,7 @@ export class OrdersService {
         const order = await this.prisma.order.findFirst({
             where: {
                 id: orderId,
-                status: { in: MERCHANT_VISIBLE_STATUSES },
+                ...MERCHANT_VISIBLE_WHERE,
                 items: { some: { product: { shopId: shop.id } } },
             },
             include: {

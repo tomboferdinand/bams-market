@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { OrdersService, MERCHANT_VISIBLE_STATUSES } from './orders.service';
+import { OrdersService, MERCHANT_VISIBLE_STATUSES, MERCHANT_VISIBLE_WHERE } from './orders.service';
 import { makeAuditMock, makePrismaMock } from '../common/testing/mocks';
 import { getCommissionPercent } from '../common/commission';
 
@@ -211,11 +211,18 @@ describe('OrdersService', () => {
   });
 
   describe('espace commerçant (US-012)', () => {
-    it('exclut les commandes non payées, annulées ou échouées', () => {
+    it('exclut les commandes non payées ou annulées ; ECHOUEE seulement si la livraison a échoué', () => {
       expect(MERCHANT_VISIBLE_STATUSES).toEqual(['PAYEE', 'EN_PREPARATION', 'EN_COURS_DE_LIVRAISON', 'LIVREE']);
       for (const s of ['EN_ATTENTE_PAIEMENT', 'ANNULEE', 'ECHOUEE']) {
         expect(MERCHANT_VISIBLE_STATUSES).not.toContain(s);
       }
+      // Paiement échoué ou expiré : pas de mission en échec, donc non visible.
+      expect(MERCHANT_VISIBLE_WHERE).toEqual({
+        OR: [
+          { status: { in: MERCHANT_VISIBLE_STATUSES } },
+          { status: 'ECHOUEE', delivery: { is: { status: 'ECHEC' } } },
+        ],
+      });
     });
 
     it('findForMerchant : 404 sans boutique', async () => {
@@ -229,7 +236,7 @@ describe('OrdersService', () => {
       await service.findForMerchant(1);
       const arg = prisma.order.findMany.mock.calls[0][0];
       expect(arg.where).toEqual({
-        status: { in: MERCHANT_VISIBLE_STATUSES },
+        ...MERCHANT_VISIBLE_WHERE,
         items: { some: { product: { shopId: 7 } } },
       });
       expect(arg.include.items.where).toEqual({ product: { shopId: 7 } });
@@ -240,7 +247,7 @@ describe('OrdersService', () => {
       prisma.order.findFirst.mockResolvedValue(null);
       await expect(service.findOneForMerchant(1, 5)).rejects.toThrow(NotFoundException);
       expect(prisma.order.findFirst.mock.calls[0][0].where).toMatchObject({
-        id: 5, status: { in: MERCHANT_VISIBLE_STATUSES },
+        id: 5, ...MERCHANT_VISIBLE_WHERE,
       });
     });
 
