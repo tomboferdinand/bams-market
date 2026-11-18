@@ -41,6 +41,11 @@ function maskMerchantOrder<T extends { user?: { firstName: string; lastName: str
     return { ...order, user: { firstName: order.user.firstName, lastName: order.user.lastName.charAt(0) } } as T;
 }
 
+// Livreur vu par le commerçant : prénom et nom seulement (jamais téléphone, e-mail ni adresse).
+const MERCHANT_DELIVERY_SELECT = {
+    select: { status: true, livreur: { select: { firstName: true, lastName: true } } },
+} as const;
+
 @Injectable()
 export class OrdersService {
     constructor(
@@ -241,12 +246,22 @@ export class OrdersService {
                 address: MERCHANT_ADDRESS_SELECT,
                 user: MERCHANT_USER_SELECT,
                 statusHistory: true,
+                delivery: MERCHANT_DELIVERY_SELECT,
             },
             omit: HIDE_CONFIRMATION_CODE,
         });
 
         if (!order) throw new NotFoundException("Commande introuvable ou ne concernant pas votre boutique.");
-        return maskMerchantOrder(order);
+        // La commande est déjà limitée à la boutique du commerçant (where ci-dessus) : il ne voit jamais
+        // le livreur d'une autre boutique. assignedCourier = null tant qu'aucun livreur n'a accepté.
+        const { delivery, ...rest } = order;
+        return maskMerchantOrder({
+            ...rest,
+            deliveryStatus: delivery?.status ?? null,
+            assignedCourier: delivery?.livreur
+                ? { firstName: delivery.livreur.firstName, lastName: delivery.livreur.lastName }
+                : null,
+        });
     }
 
     async markAsPreparing(ownerId: number, id: number) {

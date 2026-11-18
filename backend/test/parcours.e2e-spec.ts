@@ -328,6 +328,11 @@ describe('Parcours complet Bam\'S Market (E2E)', () => {
       expect(prep.body.status).toBe('EN_PREPARATION');
 
       await merchant.agent.patch(`/api/orders/${order.id}/prepare`).expect(400); // déjà en préparation
+
+      // Mission créée mais pas encore acceptée : aucun livreur affiché.
+      const waiting = await merchant.agent.get(`/api/orders/merchant/${order.id}`);
+      expect(waiting.body.assignedCourier).toBeNull();
+      expect(waiting.body.deliveryStatus).toBe('DISPONIBLE');
     });
 
     it('le livreur voit la mission sans jamais voir le code de confirmation (BR-LIV-04)', async () => {
@@ -352,6 +357,14 @@ describe('Parcours complet Bam\'S Market (E2E)', () => {
       const accept = await livreur.agent.patch(`/api/deliveries/${deliveryId}/accept`);
       okStatus(accept.status);
       expect(accept.body.status).toBe('EN_COURS');
+
+      // Le commerçant voit le livreur assigné : prénom et nom, rien d'autre.
+      const detail = await merchant.agent.get(`/api/orders/merchant/${order.id}`);
+      expect(detail.body.assignedCourier).toEqual({ firstName: 'E2E', lastName: 'Livreur' });
+      expect(JSON.stringify(detail.body)).not.toContain(livreur.phone);
+      expect(JSON.stringify(detail.body)).not.toContain('livreurId');
+      // Un autre commerçant ne voit ni la commande ni son livreur.
+      await merchant2.agent.get(`/api/orders/merchant/${order.id}`).expect(404);
 
       // Après acceptation, le livreur reçoit les coordonnées nécessaires à la livraison.
       const mine = await livreur.agent.get('/api/deliveries/mine');

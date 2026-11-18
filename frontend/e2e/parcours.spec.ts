@@ -60,6 +60,7 @@ test.describe.serial("Parcours complet : achat → paiement simulé → prépara
     await page.getByRole("button", { name: "Marquer comme prête pour expédition" }).click();
     await expect(page.getByText("Action confirmée")).toBeVisible();
     expect((await orderRow(orderId)).status).toBe("EN_PREPARATION");
+    await expect(page.getByTestId("assigned-courier")).toHaveText(/En attente d'un livreur/);
 
     // Tableau de bord : passage des ventes brutes aux gains nets (commission de 10 % sur 15 000).
     await page.goto("/commercant/dashboard");
@@ -76,6 +77,13 @@ test.describe.serial("Parcours complet : achat → paiement simulé → prépara
     await page.getByRole("button", { name: "Accepter" }).first().click();
     await page.goto("/livreur/livraisons");
     await expect(page.getByRole("button", { name: "Confirmer la livraison" })).toBeVisible();
+  });
+
+  test("4a. commerçant : voit le livreur assigné (prénom + nom, sans téléphone)", async ({ page }) => {
+    await loginUI(page, merchant);
+    await page.goto(`/commercant/commandes/${orderId}`);
+    await expect(page.getByTestId("assigned-courier")).toHaveText(new RegExp(`Livreur assigné : ${livreur.firstName} ${livreur.lastName}`));
+    await expect(page.getByText(livreur.phone)).toHaveCount(0);
   });
 
     test("4b. client : voit son code de livraison pendant la livraison", async ({ page }) => {

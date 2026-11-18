@@ -40,4 +40,7 @@ export interface MerchantOrder extends Omit<Order, "address"> {
   commissionPercent?: number;
   commissionAmount?: number;
   merchantAmount?: number;
+  /** Détail commerçant seulement : livreur ayant accepté la mission (prénom + nom), sinon null. */
+  assignedCourier?: { firstName: string; lastName: string } | null;
+  deliveryStatus?: "DISPONIBLE" | "EN_COURS" | "LIVREE" | "ECHEC" | null;
 }

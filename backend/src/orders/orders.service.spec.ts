@@ -251,6 +251,38 @@ describe('OrdersService', () => {
       });
     });
 
+    it('findOneForMerchant : livreur assigné (prénom + nom seulement), limité à sa boutique', async () => {
+      prisma.shop.findUnique.mockResolvedValue({ id: 7 });
+      prisma.order.findFirst.mockResolvedValue({
+        id: 5, status: 'EN_COURS_DE_LIVRAISON', items: [], user: { firstName: 'Rova', lastName: 'Rakoto' },
+        delivery: { status: 'EN_COURS', livreur: { firstName: 'Hery', lastName: 'Andria' } },
+      });
+      const res: any = await service.findOneForMerchant(1, 5);
+
+      const arg = prisma.order.findFirst.mock.calls[0][0];
+      expect(arg.where).toMatchObject({ id: 5, items: { some: { product: { shopId: 7 } } } });
+      expect(arg.include.delivery).toEqual({
+        select: { status: true, livreur: { select: { firstName: true, lastName: true } } },
+      });
+      expect(JSON.stringify(arg.include.delivery)).not.toMatch(/phone|email|address/);
+      expect(res.assignedCourier).toEqual({ firstName: 'Hery', lastName: 'Andria' });
+      expect(res.deliveryStatus).toBe('EN_COURS');
+      expect(res).not.toHaveProperty('delivery');
+    });
+
+    it('findOneForMerchant : aucun livreur tant que la mission n’est pas acceptée', async () => {
+      prisma.shop.findUnique.mockResolvedValue({ id: 7 });
+      prisma.order.findFirst.mockResolvedValueOnce({
+        id: 5, status: 'EN_PREPARATION', items: [], delivery: { status: 'DISPONIBLE', livreur: null },
+      }).mockResolvedValueOnce({ id: 6, status: 'PAYEE', items: [], delivery: null });
+      const enAttente: any = await service.findOneForMerchant(1, 5);
+      expect(enAttente.assignedCourier).toBeNull();
+      expect(enAttente.deliveryStatus).toBe('DISPONIBLE');
+      const sansMission: any = await service.findOneForMerchant(1, 6);
+      expect(sansMission.assignedCourier).toBeNull();
+      expect(sansMission.deliveryStatus).toBeNull();
+    });
+
     it('markAsPreparing : refuse si pas PAYEE', async () => {
       prisma.shop.findUnique.mockResolvedValue({ id: 7 });
       prisma.order.findFirst.mockResolvedValue({ id: 5, status: 'EN_PREPARATION' });

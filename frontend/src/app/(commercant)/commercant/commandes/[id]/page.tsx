@@ -12,6 +12,7 @@ import { OrderStatusBadge } from "@/features/orders/components/order-status-badg
 import { getMerchantOrder, markOrderAsPreparing } from "@/services/orders.service";
 import { ApiError } from "@/services/api";
 import type { MerchantOrder } from "@/types/order";
+import { courierLabel } from "@/features/orders/courier-label";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("fr-FR").format(n);
@@ -177,10 +178,30 @@ export default function MerchantOrderDetailPage() {
                       <div>
                         <p className="text-on-background">{order.address.city}</p>
                         <p className="mt-1 font-semibold text-primary">{order.address.label}</p>
-                        <p className="mt-2 text-xs text-on-surface-variant">Le livreur récupère le colis chez vous et gère le contact avec le client.</p>
                       </div>
                     </div>
                   </div>
+                  {order.status !== "ECHOUEE" && (
+                    <div>
+                      <p className="mb-1 text-xs uppercase tracking-wider text-on-surface-variant">Livraison</p>
+                      <p className="flex items-center gap-2 font-semibold text-on-background" data-testid="assigned-courier">
+                        <Truck size={18} className="text-on-surface-variant" /> {courierLabel(order)}
+                      </p>
+                      <p className="mt-1 text-xs text-on-surface-variant">
+                        {order.assignedCourier
+                          ? "Ce livreur vient chercher le colis à votre boutique, puis gère le contact avec le client."
+                          : order.status === "PAYEE"
+                            ? "Marquez la commande comme prête : elle sera proposée aux livreurs, et le premier qui l'accepte viendra chercher le colis."
+                            : "La mission est proposée aux livreurs ; le premier qui l'accepte viendra chercher le colis à votre boutique."}
+                      </p>
+                    </div>
+                  )}
+                  {order.status === "ECHOUEE" && order.assignedCourier && (
+                    <div>
+                      <p className="mb-1 text-xs uppercase tracking-wider text-on-surface-variant">Livraison</p>
+                      <p className="font-semibold text-on-background" data-testid="assigned-courier">{courierLabel(order)}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
