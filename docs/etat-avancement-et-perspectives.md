@@ -28,6 +28,7 @@ Le MVP couvre tout le parcours, de la commande au paiement des acteurs :
 | Pas d'annulation après paiement ni de circuit « rupture de stock imprévue » | Traités manuellement par contact avec l'administration. |
 | Pas de réconciliation automatique des paiements | Les anomalies (paiement tardif, montant différent) sont journalisées pour traitement. |
 | Livraison limitée à Fianarantsoa | Périmètre volontaire du MVP. |
+| Remise et retour du colis non confirmés par le commerçant | Le livreur est validé par l'administrateur et n'est payé que sur le code du client. Détail et perspectives : voir la section 4. |
 
 ## 3. Perspectives
 
@@ -37,3 +38,28 @@ Le MVP couvre tout le parcours, de la commande au paiement des acteurs :
 4. **Expérience** : notifications dans l'application et par SMS, avis et évaluations, statistiques détaillées pour le commerçant.
 5. **Croissance** : autres moyens de paiement, paiement à la livraison, application mobile, optimisation des tournées de livraison.
 6. **Recherche (master)** : recommandations de produits et détection de comportements anormaux à partir des données de commandes.
+
+## 4. Sécurité de la livraison : limites connues et perspectives
+
+### Ce sur quoi s'appuie la V1
+
+- **Livreur validé par l'administrateur** : on ne devient livreur qu'après une demande approuvée par l'administration, puis activée par un lien envoyé par e-mail. Un compte livreur peut être suspendu à tout moment.
+- **Paiement du livreur seulement sur le code du client** : le livreur n'est crédité (frais de livraison) et le commerçant n'est crédité (sous-total moins la commission) que lorsque le livreur saisit le **code à 6 chiffres** que seul le client connaît. Après 5 codes erronés, la mission est bloquée. Une livraison déclarée impossible ne crédite personne.
+- **Journal d'activité** : l'acceptation de la mission, la livraison, l'échec et le remboursement sont enregistrés avec leur auteur et leur date.
+- **Remboursement manuel enregistré par l'administrateur** : après une livraison échouée, l'administrateur rembourse le client par Mobile Money puis enregistre le remboursement (référence, auteur, date). Le système en refuse un second pour la même commande.
+- **Coordonnées du client limitées** : le livreur ne voit le téléphone et l'adresse exacte du client que pendant une livraison qu'il a acceptée ; ni avant (missions disponibles), ni après (historique). Le commerçant voit le prénom et le nom du livreur assigné, sans ses coordonnées.
+
+### Limites connues
+
+- La **remise du colis** au livreur n'est pas confirmée par le commerçant : la commande passe « En cours de livraison » dès que le livreur accepte la mission, avant d'avoir récupéré le colis.
+- Après un **échec de livraison**, le stock est restitué automatiquement, sans que le commerçant confirme avoir récupéré le colis.
+- Rien ne repère un livreur qui déclare des échecs à répétition.
+- La déclaration d'un échec ne demande ni motif ni preuve.
+
+### Perspectives
+
+1. **Confirmation de remise du colis** : le commerçant remet le colis contre un code (affiché au livreur, saisi par le commerçant, ou l'inverse). La commande ne passe « En cours de livraison » qu'à ce moment.
+2. **Confirmation du retour après un échec** : la commande reste « Retour en attente » tant que le commerçant n'a pas confirmé avoir récupéré le colis ; le stock n'est restitué qu'à ce moment, et l'administrateur est alerté si le retour tarde.
+3. **Suivi du taux d'échec par livreur** : indicateur dans l'administration et suspension automatique au-delà d'un seuil (par exemple trois échecs sur dix missions), levée par l'administrateur après vérification.
+4. **Motif obligatoire et photo** pour déclarer un échec (client absent, adresse introuvable, refus du colis), visibles par l'administrateur et le commerçant.
+5. **Mesures hors logiciel** : contrat signé avec chaque livreur, caution déposée à l'inscription, plafond de valeur par mission (une commande au-delà du plafond est réservée aux livreurs expérimentés ou livrée par le commerçant).
