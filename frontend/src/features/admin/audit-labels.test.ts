@@ -53,3 +53,14 @@ describe("Journal d'activité : libellés français", () => {
     expect(maskAuditPhone("0328019162")).toBe("032•••62");
   });
 });
+
+describe("Journal : anomalies de retrait", () => {
+  it("libellés lisibles et couleur d'alerte", () => {
+    expect(AUDIT_ACTION_LABEL.PAYOUT_ANOMALY).toBe("Anomalie de retrait");
+    expect(describeAuditDetails({ action: "PAYOUT_ANOMALY", previousValue: "ECHOUE", newValue: "REUSSI_APRES_RECREDIT" }))
+      .toBe("Retrait confirmé par GoalPay après avoir été recrédité : à régulariser");
+    expect(describeAuditDetails({ action: "PAYOUT_ANOMALY", previousValue: "EN_ATTENTE", newValue: "ANOMALIE_MONTANT" }))
+      .toContain("non réglé");
+    expect(auditToneValue({ action: "PAYOUT_ANOMALY", newValue: "ANOMALIE_MONTANT" })).toBe("SUSPENDU");
+  });
+});

@@ -25,6 +25,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   PAYOUT_STATUS_CHANGE: "Statut retrait",
   PAYOUT_PHONE_CHANGED: "Numéro de retrait modifié",
   PAYOUT_AUTH_LOCKED: "Retraits bloqués",
+  PAYOUT_ANOMALY: "Anomalie de retrait",
 };
 
 export const AUDIT_ENTITY_LABEL: Record<string, string> = {
@@ -88,6 +89,12 @@ export function describeAuditDetails(entry: Pick<AuditLogEntry, "action" | "prev
       const minutes = /BLOQUE_(\d+)_MIN/.exec(next ?? "")?.[1];
       return minutes ? `Trop d'erreurs de mot de passe : retraits bloqués ${minutes} min` : "Retraits bloqués";
     }
+    case "PAYOUT_ANOMALY":
+      return next === "REUSSI_APRES_RECREDIT"
+        ? "Retrait confirmé par GoalPay après avoir été recrédité : à régulariser"
+        : next === "ANOMALIE_MONTANT"
+          ? "Montant ou numéro annoncé par GoalPay différent de la demande : non réglé, à vérifier"
+          : `Anomalie : ${next ?? "—"}`;
     case "PASSWORD_RESET":
       return "Mot de passe réinitialisé par l'utilisateur";
     case "ORDER_REFUND":
@@ -103,6 +110,6 @@ export function auditToneValue(entry: Pick<AuditLogEntry, "action" | "newValue">
   if (entry.action === "PAYOUT_STATUS_CHANGE") return v === "REUSSI" ? "VALIDEE" : v === "ECHOUE" ? "ECHOUEE" : v;
   if (entry.action === "ROLE_REQUEST_ACTIVATED" || entry.action === "USER_ROLE_CHANGED") return "VALIDEE";
   if (entry.action === "ROLE_REQUEST_REJECTED") return "ECHOUEE";
-  if (entry.action === "PAYOUT_AUTH_LOCKED") return "SUSPENDU";
+  if (entry.action === "PAYOUT_AUTH_LOCKED" || entry.action === "PAYOUT_ANOMALY") return "SUSPENDU";
   return v.split(":")[0] || null;
 }

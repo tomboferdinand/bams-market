@@ -129,8 +129,8 @@ export function WalletPanel() {
           p.status === "REUSSI"
             ? `Retrait de ${formatPrice(p.amount)} MGA effectué vers ${p.phone}. Un e-mail de confirmation vous a été envoyé.`
             : p.status === "ECHOUE"
-              ? "Le retrait a échoué, votre solde a été rétabli."
-              : "Retrait en cours de traitement. Vous recevrez un e-mail à la fin du traitement.",
+              ? `Le retrait a échoué${p.error ? ` : ${p.error}` : "."} Le montant et les frais ont été recrédités sur votre solde.`
+              : "Retrait envoyé à l'opérateur, en attente de confirmation. En cas d'échec, le montant et les frais seront recrédités automatiquement. Vous recevrez un e-mail à la fin du traitement.",
       });
     } catch (err) {
       setPassword("");
@@ -241,7 +241,7 @@ export function WalletPanel() {
             <div role="group" className="space-y-1 rounded border border-outline-variant bg-surface-container-lowest p-3 text-sm text-on-surface" aria-label="Récapitulatif du retrait">
               <p>Vous recevez <strong>{formatPrice(preview.amount)} MGA</strong></p>
               <p>Sur le numéro <strong>{preview.phone}</strong></p>
-              <p>Frais : {formatPrice(preview.fees)} MGA</p>
+              <p>Frais{settings.mode === "goalpay" ? " (opérateur et GoalPay)" : ""} : {formatPrice(preview.fees)} MGA</p>
               <p>Débit total de votre solde : <strong>{formatPrice(preview.totalDebited)} MGA</strong></p>
             </div>
             <p className="flex items-center gap-2 text-sm font-semibold text-on-surface">
@@ -299,8 +299,18 @@ export function WalletPanel() {
                     <p className="text-xs text-on-surface-variant">
                       {formatDateTime(p.createdAt)} · frais {formatPrice(p.fees)} MGA
                     </p>
+                    {p.status === "ECHOUE" && p.error && <p className="text-xs text-error">{p.error}</p>}
                   </div>
-                  <span className="text-xs font-semibold text-on-surface-variant">{PAYOUT_STATUS_LABELS[p.status]}</span>
+                  <span
+                    data-testid="payout-status"
+                    className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${
+                      p.status === "REUSSI" ? "bg-primary-container text-on-primary-container"
+                      : p.status === "ECHOUE" ? "bg-error-container text-on-error-container"
+                      : "bg-surface-variant text-on-surface-variant"
+                    }`}
+                  >
+                    {PAYOUT_STATUS_LABELS[p.status]}
+                  </span>
                 </li>
               ))}
             </ul>
