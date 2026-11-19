@@ -82,10 +82,19 @@ function providerMessage(body: any): string | undefined {
   return text.slice(0, 200);
 }
 
-const toInt = (v: unknown): number | null => {
-  const n = typeof v === 'string' ? Number(v) : v;
-  return typeof n === 'number' && Number.isFinite(n) ? Math.round(n) : null;
+/** Nombre lu tel quel (nombre ou texte numérique), sans arrondi : un montant décimal est refusé plus loin. */
+const toNumber = (v: unknown): number | null => {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
 };
+
+/** Objet « data » de la réponse : objet, liste d'un seul élément, ou corps lui-même ; sinon null (ambigu). */
+function singleData(body: any): any {
+  const d = body?.data;
+  if (Array.isArray(d)) return d.length === 1 && d[0] && typeof d[0] === 'object' ? d[0] : null;
+  if (d && typeof d === 'object') return d;
+  return body && typeof body === 'object' ? body : null;
+}
 
 // 4xx « définitifs » : le retrait n'a pas été accepté par GoalPay. Les autres 4xx (délai, conflit,
 // trop de requêtes) sont ambigus : l'argent a peut-être été envoyé, le retrait reste en attente.
@@ -223,22 +232,34 @@ export class GoalpayPayoutProvider extends PayoutProvider {
       // Refus de l'opérateur ou de GoalPay (montant trop faible, plafond, numéro...) : message clair.
       throw new BadRequestException(`Retrait refusé par l’opérateur${providerMessage(reply.body) ? ` : ${providerMessage(reply.body)}` : '. Vérifiez le montant.'}`);
     }
-    const data = reply.body?.data && typeof reply.body.data === 'object' ? reply.body.data : reply.body;
-    const totalDebited = toInt(data?.total_debite);
-    const feesTotal = toInt(data?.frais_total);
-    const ok =
-      reply.status >= 200 && reply.status < 300 &&
-      ((totalDebited !== null && totalDebited >= amount) || (feesTotal !== null && feesTotal >= 0));
-    if (!ok) {
+    // Réponse réelle de l'aperçu (relevée en production) :
+    //   { message, count, data: { frais, total_debiter, is_retirable, frais_transfert_operateur, frais_operateur_commission } }
+    // Anciens noms (réponse de max-retirable dans le guide) acceptés aussi : frais_total, total_debite.
+    const data = singleData(reply.body);
+    const fees = toNumber(data?.frais ?? data?.frais_total);
+    const total = toNumber(data?.total_debiter ?? data?.total_debite);
+    if (reply.status < 200 || reply.status >= 300 || !data || (fees === null && total === null)) {
       this.logUnknown('aperçu', reply);
       throw new ServiceUnavailableException('Impossible d’obtenir les frais du retrait pour le moment. Réessayez dans un instant.');
     }
-    // Le portefeuille est débité de total_debite ; le bénéficiaire reçoit le montant demandé.
-    const total = totalDebited !== null && totalDebited >= amount ? totalDebited : amount + (feesTotal as number);
-    if (totalDebited !== null && feesTotal !== null && totalDebited !== amount + feesTotal) {
-      this.logger.warn(`Aperçu GoalPay : total_debite (${totalDebited}) ≠ montant + frais_total (${amount + feesTotal}) ; total_debite retenu.`);
+
+    // GoalPay indique que ce montant ne peut pas être retiré (solde marchand, plafond, opérateur...).
+    if (data.is_retirable === false) {
+      this.logger.warn(`Aperçu GoalPay : montant non retirable (montant ${amount}${fees !== null ? `, frais ${fees}` : ''}${total !== null ? `, total ${total}` : ''}).`);
+      throw new BadRequestException(
+        'Ce retrait n’est pas possible pour le moment (montant non retirable chez l’opérateur). Essayez un montant plus petit ou réessayez plus tard.',
+      );
     }
-    return { fees: total - amount, totalDebited: total };
+
+    // Garde-fou : le total débité doit valoir exactement montant + frais, sinon on n'avance pas.
+    const resolvedFees = fees ?? (total as number) - amount;
+    const resolvedTotal = total ?? amount + (fees as number);
+    if (resolvedFees < 0 || !Number.isInteger(resolvedFees) || !Number.isInteger(resolvedTotal) || resolvedTotal !== amount + resolvedFees) {
+      this.logger.warn(`Aperçu GoalPay incohérent : montant ${amount}, frais ${fees ?? '—'}, total débité ${total ?? '—'} (attendu ${amount} + frais).`);
+      throw new ServiceUnavailableException('Les frais annoncés pour ce retrait sont incohérents. Aucun montant n’a été débité ; réessayez plus tard.');
+    }
+    // Le portefeuille est débité du total ; le bénéficiaire reçoit le montant demandé.
+    return { fees: resolvedFees, totalDebited: resolvedTotal };
   }
 
   async withdraw(input: { phone: string; amount: number; reference: string }): Promise<PayoutResult> {
@@ -251,12 +272,14 @@ export class GoalpayPayoutProvider extends PayoutProvider {
       return { status: 'failed', error: `Retrait refusé par l’opérateur${providerMessage(reply.body) ? ` : ${providerMessage(reply.body)}` : '.'}` };
     }
     if (reply.status >= 200 && reply.status < 300) {
-      const status = readProviderStatus(reply.body);
-      if (status === 'failed') return { status: 'failed', error: providerMessage(reply.body) ?? 'Retrait refusé par l’opérateur.' };
-      if (status === 'unknown') this.logUnknown('retrait', reply);
-      // Le statut final arrive par webhook (ou par le rattrapage) : même un « success » immédiat est
-      // accepté, les autres réponses restent en attente.
-      return status === 'success' ? { status: 'success' } : { status: 'pending' };
+      // Le guide l'indique : le statut final du retrait arrive par webhook (ou par le rattrapage).
+      // Une réponse 2xx signifie « demande acceptée » : le retrait reste EN ATTENTE quel que soit son
+      // contenu (pas de règlement ni de recrédit sur une réponse immédiate dont le format n'est pas garanti).
+      // Sa structure est journalisée pour vérifier le format réel.
+      this.logger.warn(
+        `Retrait accepté par GoalPay (HTTP ${reply.status}, statut lu : ${readProviderStatus(reply.body)}), confirmation attendue ; structure ${JSON.stringify(describeShape(reply.body))}`,
+      );
+      return { status: 'pending' };
     }
     this.logUnknown('retrait', reply); // 5xx ou 4xx ambigu
     return { status: 'pending' };
@@ -269,13 +292,15 @@ export class GoalpayPayoutProvider extends PayoutProvider {
       this.logUnknown('statut', reply);
       return { status: 'pending' };
     }
-    const status = readProviderStatus(reply.body);
-    if (status === 'unknown') {
+    // « data » peut être un objet ou une liste (champ « count ») : une liste de plus d'un élément est ambiguë.
+    const data = singleData(reply.body);
+    const status = data ? readProviderStatus({ ...reply.body, data }) : 'unknown';
+    const montant = toNumber(data?.montant ?? data?.amount);
+    // Au moindre doute, le retrait reste en attente : statut inconnu, ou succès sans montant à contrôler.
+    if (status === 'unknown' || status === 'pending' || (status === 'success' && montant === null)) {
       this.logUnknown('statut', reply);
       return { status: 'pending' };
     }
-    const data = reply.body?.data ?? reply.body;
-    const montant = toInt(data?.montant ?? data?.amount);
     return {
       status,
       amount: montant ?? undefined,

@@ -361,6 +361,15 @@ describe('PayoutsService', () => {
       expect(prisma.walletEntry.create).toHaveBeenCalledWith({ data: { userId: 5, payoutId: 9, type: 'RETRAIT', amount: -6000 } });
     });
 
+    it('aperçu refusé par GoalPay (montant non retirable, frais incohérents) : aucun débit, aucun retrait', async () => {
+      provider.preview.mockRejectedValue(new BadRequestException('Ce retrait n’est pas possible pour le moment (montant non retirable chez l’opérateur).'));
+      arm();
+      await expect(service.create(5, 5000, PASSWORD)).rejects.toThrow(/non retirable/);
+      expect(prisma.payout.create).not.toHaveBeenCalled();
+      expect(prisma.walletEntry.create).not.toHaveBeenCalled();
+      expect(provider.withdraw).not.toHaveBeenCalled();
+    });
+
     it('liste blanche refusée : aucun débit, aucun retrait', async () => {
       provider.ensureWhitelisted.mockRejectedValue(new Error('GoalPay a refusé'));
       arm();

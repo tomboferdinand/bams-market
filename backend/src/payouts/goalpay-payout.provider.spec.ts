@@ -122,6 +122,55 @@ describe('GoalpayPayoutProvider (faux client)', () => {
     });
   });
 
+  describe('aperçu : structure réelle relevée en production', () => {
+    // { message, count, data: { frais, total_debiter, is_retirable, frais_transfert_operateur, frais_operateur_commission } }
+    const real = (data: Record<string, unknown>) => ({
+      status: 200,
+      body: {
+        message: 'Prévisualisation du retrait',
+        count: 1,
+        data: { frais: 150, total_debiter: 5150, is_retirable: true, frais_transfert_operateur: 100, frais_operateur_commission: 50, ...data },
+      },
+    });
+
+    it('succès : frais = data.frais, total débité = data.total_debiter', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp(real({})).http);
+      const spy = logs(p);
+      expect(await p.preview('0341234567', 5000)).toEqual({ fees: 150, totalDebited: 5150 });
+      expect(spy).not.toHaveBeenCalled(); // réponse reconnue : rien à signaler
+    });
+
+    it('is_retirable = false : refus clair (400), donc aucun débit', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp(real({ is_retirable: false })).http);
+      const spy = logs(p);
+      const err: any = await p.preview('0341234567', 5000).catch((e) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect(err.message).toContain('montant non retirable');
+      expect(spy.mock.calls.map((c) => String(c[0])).join('\n')).not.toContain('0341234567');
+    });
+
+    it('total incohérent (≠ montant + frais) : refus, journal warn avec les montants, sans numéro', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp(real({ total_debiter: 6000 })).http);
+      const spy = logs(p);
+      await expect(p.preview('0341234567', 5000)).rejects.toThrow(/incohérents/);
+      const text = spy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(text).toContain('montant 5000, frais 150, total débité 6000');
+      expect(text).not.toContain('0341234567');
+    });
+
+    it('montants décimaux ou frais négatifs : refusés', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp(real({ frais: 150.5, total_debiter: 5150.5 }), real({ frais: -10, total_debiter: 4990 })).http);
+      logs(p);
+      await expect(p.preview('0341234567', 5000)).rejects.toThrow(/incohérents/);
+      await expect(p.preview('0341234567', 5000)).rejects.toThrow(/incohérents/);
+    });
+
+    it('nombres envoyés sous forme de texte : acceptés s’ils sont cohérents', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp(real({ frais: '150', total_debiter: '5150' })).http);
+      expect(await p.preview('0341234567', 5000)).toEqual({ fees: 150, totalDebited: 5150 });
+    });
+  });
+
   describe('retrait', () => {
     const input = { phone: '0341234567', amount: 25000, reference: 'BAMP-ABC' };
 
@@ -132,6 +181,20 @@ describe('GoalpayPayoutProvider (faux client)', () => {
       expect(await p.withdraw(input)).toEqual({ status: 'pending' });
       expect(JSON.parse(calls[0].init.body as string)).toEqual({ amount: 25000, reference: 'BAMP-ABC' });
       expect(calls[0].url).toContain('/withdraw-white-list/0341234567/withdraw');
+    });
+
+    it('2xx, même avec « success » ou « failed » : toujours en attente du webhook, structure journalisée', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp(
+        { status: 200, body: { message: 'Success', count: 1, data: { status: 'success', reference: 'BAMP-ABC' } } },
+        { status: 200, body: { status: 'failed' } },
+      ).http);
+      const spy = logs(p);
+      expect(await p.withdraw(input)).toEqual({ status: 'pending' });
+      expect(await p.withdraw(input)).toEqual({ status: 'pending' });
+      const text = spy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(text).toContain('confirmation attendue');
+      expect(text).toContain('"data":{"status":"string","reference":"string"}');
+      expect(text).not.toContain('BAMP-ABC'); // structure seulement, aucune valeur
     });
 
     it('4xx définitif : échec (le service recrédite)', async () => {
@@ -159,6 +222,24 @@ describe('GoalpayPayoutProvider (faux client)', () => {
       const res = await new GoalpayPayoutProvider(http).getStatus('BAMP-ABC');
       expect(calls[0].url).toBe('https://api.goalpay.test/api/access/sites/withdraw-status/BAMP-ABC');
       expect(res).toEqual({ status: 'success', amount: 200, providerReference: 'PP26', error: undefined });
+    });
+
+    it('au moindre doute, en attente : succès sans montant, liste de plusieurs éléments, « pending »', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp(
+        { status: 200, body: { status: 'success', data: { reference: 'BAMP-ABC' } } },
+        { status: 200, body: { count: 2, data: [{ status: 'success', montant: 200 }, { status: 'failed' }] } },
+        { status: 200, body: { data: { status: 'pending', montant: 200 } } },
+      ).http);
+      const spy = logs(p);
+      expect(await p.getStatus('BAMP-ABC')).toEqual({ status: 'pending' });
+      expect(await p.getStatus('BAMP-ABC')).toEqual({ status: 'pending' });
+      expect(await p.getStatus('BAMP-ABC')).toEqual({ status: 'pending' });
+      expect(spy.mock.calls.length).toBeGreaterThanOrEqual(3); // structure journalisée à chaque doute
+    });
+
+    it('liste d’un seul élément (champ count) : lue normalement', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp({ status: 200, body: { message: 'ok', count: 1, data: [{ status: 'success', montant: 5000.0 }] } }).http);
+      expect(await p.getStatus('BAMP-ABC')).toMatchObject({ status: 'success', amount: 5000 });
     });
 
     it('échec reconnu, inconnu = en attente, erreur HTTP = en attente', async () => {
