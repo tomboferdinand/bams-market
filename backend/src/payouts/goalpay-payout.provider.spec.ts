@@ -14,10 +14,7 @@ function fakeHttp(...replies: Reply[]) {
     if (next instanceof Error) throw next;
     return {
       status: next.status,
-      json: async () => {
-        if (next.body === undefined) throw new Error('pas de JSON');
-        return next.body;
-      },
+      text: async () => (next.body === undefined ? '' : typeof next.body === 'string' ? next.body : JSON.stringify(next.body)),
     } as Response;
   });
   return { http, calls };
@@ -174,6 +171,82 @@ describe('GoalpayPayoutProvider (faux client)', () => {
       expect((await p.getStatus('R')).status).toBe('failed');
       expect(await p.getStatus('R')).toEqual({ status: 'pending' });
       expect(await p.getStatus('R')).toEqual({ status: 'pending' });
+    });
+  });
+
+  describe('journal des échecs (warn), sans jeton, secret ni numéro complet', () => {
+    const all = (spy: jest.SpyInstance) => spy.mock.calls.map((c) => String(c[0])).join('\n');
+
+    it('aperçu refusé (HTTP 400) : méthode, chemin masqué, code, clés et message', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp({ status: 400, body: { success: false, message: 'Solde marchand insuffisant pour 0341234567' } }).http);
+      const spy = logs(p);
+      await expect(p.preview('0341234567', 5000)).rejects.toThrow(BadRequestException);
+      const text = all(spy);
+      expect(text).toContain('POST /withdraw-white-list/034•••67/withdraw/preview');
+      expect(text).toContain('HTTP 400');
+      expect(text).toContain('clés : success, message');
+      expect(text).toContain('message : Solde marchand insuffisant pour 03•••67');
+      expect(text).not.toContain('0341234567');
+    });
+
+    it('panne réseau ou délai dépassé : nom de l’erreur, cause et durée journalisés', async () => {
+      const err = Object.assign(new TypeError('fetch failed'), { cause: { code: 'UND_ERR_CONNECT_TIMEOUT' } });
+      const p = new GoalpayPayoutProvider(fakeHttp(err).http);
+      const spy = logs(p);
+      await expect(p.preview('0341234567', 5000)).rejects.toThrow(ServiceUnavailableException);
+      const text = all(spy);
+      expect(text).toMatch(/Appel GoalPay en échec : POST \/withdraw-white-list\/034•••67\/withdraw\/preview — TypeError : fetch failed \(cause : UND_ERR_CONNECT_TIMEOUT\) après \d+ ms/);
+    });
+
+    it('réponse HTML (erreur serveur) : extrait de texte sans balise', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp({ status: 502, body: '<html><body><h1>502 Bad Gateway</h1></body></html>' }).http);
+      const spy = logs(p);
+      await expect(p.preview('0341234567', 5000)).rejects.toThrow(ServiceUnavailableException);
+      expect(all(spy)).toContain('HTTP 502 ; clés : (corps vide ou non JSON) ; message : 502 Bad Gateway');
+    });
+
+    it('liste blanche, retrait et statut sont journalisés de la même façon', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp(
+        { status: 500, body: { error: 'Erreur interne' } }, { status: 404, body: {} }, // liste blanche + vérification
+        { status: 400, body: { message: 'Numéro non autorisé' } },                    // retrait
+        { status: 503, body: {} },                                                     // statut
+      ).http);
+      const spy = logs(p);
+      await expect(p.ensureWhitelisted('0331234567', 'Jean', 1000)).rejects.toThrow();
+      await p.withdraw({ phone: '0331234567', amount: 5000, reference: 'BAMP-1' });
+      await p.getStatus('BAMP-1');
+      const text = all(spy);
+      expect(text).toContain('POST /withdraw-white-list — HTTP 500');
+      expect(text).toContain('GET /withdraw-white-list/033•••67 — HTTP 404');
+      expect(text).toContain('POST /withdraw-white-list/033•••67/withdraw — HTTP 400');
+      expect(text).toContain('GET /withdraw-status/BAMP-1 — HTTP 503');
+      expect(text).not.toContain('0331234567');
+    });
+
+    it('le jeton et le secret ne figurent jamais dans le journal, même renvoyés par GoalPay', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp({ status: 401, body: { message: `Jeton ${KEY} invalide (signature ${SECRET})` } }).http);
+      const spy = logs(p);
+      await expect(p.preview('0341234567', 5000)).rejects.toThrow();
+      const text = all(spy);
+      expect(text).not.toContain(KEY);
+      expect(text).not.toContain(SECRET);
+      expect(text).toContain('[masqué]');
+    });
+
+    it('le message montré à l’utilisateur ne contient pas non plus le jeton', async () => {
+      const p = new GoalpayPayoutProvider(fakeHttp({ status: 400, body: { message: `Jeton ${KEY} refusé` } }).http);
+      logs(p);
+      const err: any = await p.preview('0341234567', 5000).catch((e) => e);
+      expect(err.message).not.toContain(KEY);
+      expect(err.message).toContain('[masqué]');
+    });
+
+    it('délai configurable par GOALPAY_TIMEOUT_MS', async () => {
+      process.env.GOALPAY_TIMEOUT_MS = '30000';
+      const timeout = jest.spyOn(AbortSignal, 'timeout');
+      await new GoalpayPayoutProvider(fakeHttp({ status: 200, body: { frais_total: 100 } }).http).preview('0341234567', 5000);
+      expect(timeout).toHaveBeenCalledWith(30000);
+      timeout.mockRestore();
     });
   });
 

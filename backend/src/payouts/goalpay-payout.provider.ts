@@ -17,8 +17,26 @@ import { PayoutPreview, PayoutProvider, PayoutResult, PayoutStatusResult } from 
  * premier essai réel. Le jeton et le secret ne sont jamais journalisés.
  */
 
-const TIMEOUT_MS = 15_000;
 const BASE = '/api/access/sites';
+/** Délai maximum d'un appel GoalPay : GOALPAY_TIMEOUT_MS (15 000 ms par défaut). */
+const goalpayTimeoutMs = () => {
+  const n = Number(process.env.GOALPAY_TIMEOUT_MS);
+  return Number.isFinite(n) && n >= 1000 ? n : 15_000;
+};
+
+/** Numéro de téléphone dans un chemin : « /withdraw-white-list/0341234567/… » → « /withdraw-white-list/034•••67/… ». */
+export function maskPath(path: string): string {
+  return path.replace(/(?:\+?261|0)\d{9}/g, (m) => `${m.slice(0, 3)}•••${m.slice(-2)}`);
+}
+
+/** Texte journalisé : jeton et secret retirés s'ils apparaissent, toute suite de 5 chiffres ou plus masquée. */
+export function maskDigits(text: string): string {
+  let out = text;
+  for (const secret of [process.env.GOALPAY_ACCESS_KEY, process.env.GOALPAY_WEBHOOK_SECRET]) {
+    if (secret && secret.trim().length >= 4) out = out.split(secret.trim()).join('[masqué]');
+  }
+  return out.replace(/\d{5,}/g, (m) => `${m.slice(0, 2)}•••${m.slice(-2)}`).slice(0, 300);
+}
 
 /** Fonction d'appel HTTP (fetch), remplaçable par un faux client dans les tests. */
 export type HttpFetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -55,7 +73,13 @@ export function readProviderStatus(body: any): 'success' | 'failed' | 'pending' 
 /** Message d'erreur GoalPay lisible (court, sans donnée sensible). */
 function providerMessage(body: any): string | undefined {
   const raw = body?.message ?? body?.error ?? body?.data?.message ?? body?.detail;
-  return typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 200) : undefined;
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  // Montré à l'utilisateur : jamais le jeton ni le secret, même si GoalPay les renvoie.
+  let text = raw.trim();
+  for (const secret of [process.env.GOALPAY_ACCESS_KEY, process.env.GOALPAY_WEBHOOK_SECRET]) {
+    if (secret && secret.trim().length >= 4) text = text.split(secret.trim()).join('[masqué]');
+  }
+  return text.slice(0, 200);
 }
 
 const toInt = (v: unknown): number | null => {
@@ -95,21 +119,50 @@ export class GoalpayPayoutProvider extends PayoutProvider {
     };
   }
 
-  /** Appel HTTP. Lève une erreur « réseau » (délai, coupure) : à traiter comme une réponse inconnue. */
+  /**
+   * Appel HTTP. Lève une erreur « réseau » (délai, coupure) : à traiter comme une réponse inconnue.
+   * Chaque échec (exception réseau ou code HTTP hors 2xx) est journalisé en warn, masqué (voir logFailure).
+   */
   private async call(method: string, path: string, body?: unknown): Promise<HttpReply> {
-    const res = await this.http(goalpayUrl(`${BASE}${path}`), {
-      method,
-      headers: this.headers(),
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    let parsed: any = null;
+    const headers = this.headers(); // clés absentes : erreur claire, aucun appel
+    const started = Date.now();
+    let res: Response;
     try {
-      parsed = await res.json();
+      res = await this.http(goalpayUrl(`${BASE}${path}`), {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(goalpayTimeoutMs()),
+      });
+    } catch (err) {
+      const e = err as Error & { cause?: { code?: string; message?: string } };
+      const cause = e?.cause?.code ?? e?.cause?.message;
+      this.logger.warn(
+        `Appel GoalPay en échec : ${method} ${maskPath(path)} — ${e?.name ?? 'Erreur'} : ${maskDigits(e?.message ?? '')}` +
+          `${cause ? ` (cause : ${maskDigits(String(cause))})` : ''} après ${Date.now() - started} ms`,
+      );
+      throw err;
+    }
+    let parsed: any = null;
+    let raw = '';
+    try {
+      raw = await res.text();
+      parsed = raw ? JSON.parse(raw) : null;
     } catch {
       /* réponse vide ou non JSON */
     }
+    if (res.status < 200 || res.status >= 300) this.logFailure(method, path, res.status, parsed, raw);
     return { status: res.status, body: parsed };
+  }
+
+  /** Échec HTTP : méthode, chemin (numéro masqué), code, clés du corps, message (chiffres masqués). */
+  private logFailure(method: string, path: string, status: number, body: any, raw: string) {
+    const keys = body && typeof body === 'object' ? Object.keys(body).join(', ') || '(aucune)' : body === null ? '(corps vide ou non JSON)' : typeof body;
+    const message = providerMessage(body) ?? (body === null && raw ? raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) : undefined);
+    this.logger.warn(
+      `Appel GoalPay refusé : ${method} ${maskPath(path)} — HTTP ${status} ; clés : ${keys}` +
+        `${message ? ` ; message : ${maskDigits(message)}` : ''}`,
+    );
   }
 
   private logUnknown(operation: string, reply: HttpReply) {
