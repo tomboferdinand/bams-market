@@ -32,6 +32,18 @@ describe('Contrôles de configuration en production', () => {
     expect(productionConfigErrors({ ...prod, PAYMENT_MODE: 'simulation' })).toEqual([]);
   });
 
+  it('retraits réels : refuse de démarrer sans jeton ni clé secrète GoalPay', () => {
+    const real = { ...prod, PAYOUT_MODE: 'goalpay' };
+    expect(productionConfigErrors(real)).toEqual([
+      'GOALPAY_ACCESS_KEY est obligatoire avec PAYOUT_MODE=goalpay (retraits réels).',
+      'GOALPAY_WEBHOOK_SECRET est obligatoire avec PAYOUT_MODE=goalpay (retraits réels).',
+    ]);
+    expect(productionConfigErrors({ ...real, GOALPAY_ACCESS_KEY: 'k', GOALPAY_WEBHOOK_SECRET: '  ' })).toHaveLength(1);
+    expect(productionConfigErrors({ ...real, GOALPAY_ACCESS_KEY: 'k', GOALPAY_WEBHOOK_SECRET: 's' })).toEqual([]);
+    // Retour à la simulation : plus rien n'est exigé (une seule variable à changer).
+    expect(productionConfigErrors({ ...prod, PAYOUT_MODE: 'simulation' })).toEqual([]);
+  });
+
   it('refuse de démarrer si CORS_ORIGIN est absent ou vide', () => {
     expect(() => assertProductionConfig({ ...prod, CORS_ORIGIN: undefined })).toThrow(/CORS_ORIGIN/);
     expect(() => assertProductionConfig({ ...prod, CORS_ORIGIN: ' , ' })).toThrow(/CORS_ORIGIN/);

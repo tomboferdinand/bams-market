@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/prisma.service';
 import { computeCommission } from '../src/common/commission';
+import { createHmac } from 'crypto';
 
 
 // Aucun e-mail réel pendant les tests (le lien est simplement journalisé) et pas de limitation par IP.
@@ -606,6 +607,43 @@ describe('Parcours complet Bam\'S Market (E2E)', () => {
       const logs = JSON.stringify((await admin.agent.get('/api/admin/audit-logs')).body);
       expect(logs).toContain('PAYOUT_REQUESTED');
       expect(logs).toContain('PAYOUT_PHONE_CHANGED');
+    });
+
+    it('webhook GoalPay withdrawal.failed sur /api/webhook : recrédit montant + frais, une seule fois', async () => {
+      const previous = process.env.GOALPAY_WEBHOOK_SECRET;
+      process.env.GOALPAY_WEBHOOK_SECRET = 'SK_E2E_SECRET';
+      try {
+        const before = (await merchant.agent.get('/api/wallet/me')).body.balance;
+        // Retrait réel resté en attente (débité) : créé directement, aucun appel à GoalPay.
+        const reference = `BAMP-E2E${rand(6)}`;
+        const payout = await prisma.payout.create({
+          data: { userId: merchant.id, phone: MERCHANT_PAYOUT, amount: 1000, fees: 50, totalDebited: 1050, reference, status: 'EN_ATTENTE' },
+        });
+        await prisma.walletEntry.create({ data: { userId: merchant.id, payoutId: payout.id, type: 'RETRAIT', amount: -1050 } });
+        expect((await merchant.agent.get('/api/wallet/me')).body.balance).toBe(before - 1050);
+
+        const sig = createHmac('sha256', 'SK_E2E_SECRET').update('SK_E2E_SECRET').digest('hex');
+        const body = {
+          webhook_type: 'withdrawal.service', event: 'withdrawal.failed', status: 'failed',
+          error: 'Echec du transfert, numéro invalide.',
+          data: { reference, mobile: MERCHANT_PAYOUT, montant: 1000.0, currency: 'Ar', reference_operateur: null },
+        };
+        await request(server).post('/api/webhook').set('x-gpay-signature', 'faux').send(body).expect(401);
+
+        const first = await request(server).post('/api/webhook').set('x-gpay-signature', sig).send(body);
+        expect(first.status).toBe(200);
+        expect(first.body).toEqual({ received: true, status: 'ECHOUE' });
+        const replay = await request(server).post('/api/webhook').set('x-gpay-signature', sig).send(body);
+        expect(replay.body).toEqual({ received: true, status: 'already-processed' });
+
+        expect((await merchant.agent.get('/api/wallet/me')).body.balance).toBe(before);
+        const stored = await prisma.payout.findUnique({ where: { id: payout.id } });
+        expect(stored).toMatchObject({ status: 'ECHOUE', error: 'Echec du transfert, numéro invalide.' });
+        expect(await prisma.walletEntry.count({ where: { payoutId: payout.id, type: 'RETRAIT_ANNULE' } })).toBe(1);
+      } finally {
+        if (previous === undefined) delete process.env.GOALPAY_WEBHOOK_SECRET;
+        else process.env.GOALPAY_WEBHOOK_SECRET = previous;
+      }
     });
 
     it('la confirmation se bloque (429) après 5 erreurs, même ensuite avec le bon mot de passe', async () => {

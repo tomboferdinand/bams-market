@@ -5,7 +5,9 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
@@ -20,8 +22,11 @@ import {
   getPayoutAuthLockMinutes,
   getPayoutAuthMaxAttempts,
   getPayoutMode,
+  getPendingCheckMinutes,
   getWalletHoldHours,
+  getWhitelistMaxAmount,
 } from '../common/payout-config';
+import { verifyWebhookSignature } from '../payments/goalpay-signature';
 import { PayoutProvider } from './payout-provider';
 import { normalizeMobile } from './phone';
 
@@ -29,6 +34,12 @@ const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
 const PAYOUT_ROLES = ['COMMERCANT', 'LIVREUR'];
 const HISTORY_SIZE = 20;
+const STATUS_BATCH = 20; // retraits vérifiés au plus par passage du rattrapage
+
+/** Webhook GoalPay d'un retrait (et non d'un paiement) : webhook_type « withdrawal.service » ou événement « withdrawal.* ». */
+export function isWithdrawalWebhook(body: any): boolean {
+  return body?.webhook_type === 'withdrawal.service' || (typeof body?.event === 'string' && body.event.startsWith('withdrawal.'));
+}
 
 type PayoutOutcome = 'REUSSI' | 'ECHOUE';
 type DbClient = Pick<PrismaService, 'walletEntry' | 'payout'>;
@@ -63,6 +74,8 @@ const USER_SELECT = {
  */
 @Injectable()
 export class PayoutsService {
+  private readonly logger = new Logger(PayoutsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -138,13 +151,22 @@ export class PayoutsService {
     if (taken) throw new ConflictException('Ce numéro est déjà le numéro de retrait d’un autre compte.');
 
     // Autorisation chez le fournisseur AVANT d'enregistrer : si elle échoue, rien n'est modifié.
-    await this.provider.ensureWhitelisted(normalized, `${target.firstName} ${target.lastName}`, getMaxPayoutAmount());
+    await this.provider.ensureWhitelisted(normalized, `${target.firstName} ${target.lastName}`, getWhitelistMaxAmount());
 
     await this.prisma.user.update({ where: { id: userId }, data: { payoutPhone: normalized }, select: { id: true } });
     await this.audit.log({
       actorId: adminId, action: 'PAYOUT_PHONE_CHANGED', entityType: 'User', entityId: userId,
       previousValue: target.payoutPhone ?? 'AUCUN', newValue: `${normalized} (motif : ${reason.trim()})`,
     });
+    // L'ancien numéro est retiré de la liste blanche. Un échec n'annule pas le changement (les retraits
+    // partent toujours vers le numéro enregistré) mais il est journalisé pour être traité à la main.
+    if (target.payoutPhone) {
+      try {
+        await this.provider.removeFromWhitelist(target.payoutPhone);
+      } catch (err) {
+        this.logger.error(`Ancien numéro de retrait de l'utilisateur ${userId} non retiré de la liste blanche : ${(err as Error).message}`);
+      }
+    }
     if (target.email) await this.mail.sendPayoutPhoneChangedEmail(target.email, normalized);
     return { payoutPhone: normalized };
   }
@@ -157,9 +179,9 @@ export class PayoutsService {
     const phone = this.requirePayoutPhone(user);
     this.checkAmount(amount);
     this.checkDailyCap(await this.dailyUsage(this.prisma, userId), amount);
-    const { fees } = await this.provider.preview(phone, amount);
+    const { fees, totalDebited } = await this.quote(user, phone, amount);
     const available = await this.availableBalance(this.prisma, userId);
-    return { amount, fees, totalDebited: amount + fees, phone, available };
+    return { amount, fees, totalDebited, phone, available };
   }
 
   /** Étape 2 : confirmation par le mot de passe, puis exécution. */
@@ -169,8 +191,7 @@ export class PayoutsService {
     this.checkAmount(amount);
     await this.checkPassword(user, password);
 
-    const { fees } = await this.provider.preview(phone, amount);
-    const totalDebited = amount + fees;
+    const { fees, totalDebited } = await this.quote(user, phone, amount);
     const reference = `BAMP-${randomBytes(6).toString('hex').toUpperCase()}`;
 
     // Débit réservé de façon atomique : le verrou sur le bénéficiaire fait passer ses retraits
@@ -259,7 +280,108 @@ export class PayoutsService {
     return { changed };
   }
 
+  // ───────────────────────── Webhook et rattrapage (GoalPay) ─────────────────────────
+
+  /**
+   * Webhook GoalPay d'un retrait (même adresse et même signature que les paiements).
+   * withdrawal.success → REUSSI ; withdrawal.failed → ECHOUE et recrédit (montant + frais), une seule fois.
+   * Le retrait est retrouvé par NOTRE référence (data.reference) ; montant et numéro sont revérifiés.
+   */
+  async handleGoalpayWebhook(signature: string | undefined, payload: any) {
+    if (!verifyWebhookSignature(process.env.GOALPAY_WEBHOOK_SECRET ?? '', signature, payload)) {
+      throw new UnauthorizedException('Signature invalide.');
+    }
+    const event = payload?.event;
+    const data = payload?.data;
+    if (typeof event !== 'string' || !data || typeof data.reference !== 'string') {
+      throw new BadRequestException('Notification invalide.');
+    }
+    const outcome: PayoutOutcome | null =
+      event === 'withdrawal.success' ? 'REUSSI' : event === 'withdrawal.failed' ? 'ECHOUE' : null;
+    if (!outcome) return { received: true, status: 'ignored' };
+
+    const payout = await this.prisma.payout.findUnique({
+      where: { reference: data.reference },
+      select: { id: true, amount: true, phone: true, status: true },
+    });
+    if (!payout) throw new NotFoundException('Retrait inconnu.');
+
+    const montant = Number(data.montant ?? data.amount);
+    const phoneOk = typeof data.mobile !== 'string' || data.mobile === payout.phone;
+    if (outcome === 'REUSSI' && (montant !== payout.amount || !phoneOk)) {
+      // Argent annoncé différent de la demande : jamais de règlement automatique.
+      this.logger.error(`Retrait ${payout.id} : montant ou numéro du webhook différent de la demande.`);
+      await this.anomaly(payout.id, payout.status, 'ANOMALIE_MONTANT');
+      return { received: true, status: 'ignored' };
+    }
+
+    if (payout.status !== 'EN_ATTENTE') {
+      if (outcome === 'REUSSI' && payout.status === 'ECHOUE') {
+        // Envoyé alors qu'il avait été déclaré échoué et recrédité : à régulariser par l'administration.
+        this.logger.error(`Retrait ${payout.id} réussi après avoir été recrédité : à régulariser.`);
+        await this.anomaly(payout.id, payout.status, 'REUSSI_APRES_RECREDIT');
+      }
+      return { received: true, status: 'already-processed' };
+    }
+
+    const error = typeof payload.error === 'string' && payload.error.trim() ? payload.error.trim().slice(0, 200) : 'Retrait refusé par l’opérateur.';
+    await this.settle(payout.id, outcome, outcome === 'REUSSI'
+      ? { providerReference: typeof data.reference_operateur === 'string' ? data.reference_operateur : undefined }
+      : { error });
+    return { received: true, status: outcome };
+  }
+
+  /**
+   * Rattrapage : retraits EN_ATTENTE depuis trop longtemps, vérifiés auprès du fournisseur
+   * (GET withdraw-status/{notre référence}). Une réponse inconnue laisse le retrait en attente.
+   */
+  async checkPendingPayouts() {
+    const before = new Date(Date.now() - getPendingCheckMinutes() * MINUTE);
+    const pending = await this.prisma.payout.findMany({
+      where: { status: 'EN_ATTENTE', createdAt: { lte: before } },
+      orderBy: { createdAt: 'asc' },
+      take: STATUS_BATCH,
+      select: { id: true, reference: true, amount: true },
+    });
+    let settled = 0;
+    for (const p of pending) {
+      try {
+        const res = await this.provider.getStatus(p.reference);
+        if (res.status === 'pending') continue;
+        if (res.status === 'success' && res.amount !== undefined && res.amount !== p.amount) {
+          await this.anomaly(p.id, 'EN_ATTENTE', 'ANOMALIE_MONTANT');
+          continue;
+        }
+        const { changed } = await this.settle(p.id, res.status === 'success' ? 'REUSSI' : 'ECHOUE',
+          res.status === 'success' ? { providerReference: res.providerReference } : { error: res.error ?? 'Retrait refusé par l’opérateur.' });
+        if (changed) settled += 1;
+      } catch (err) {
+        this.logger.warn(`Statut du retrait ${p.id} indisponible : ${(err as Error).message}`);
+      }
+    }
+    return { checked: pending.length, settled };
+  }
+
+  private anomaly(payoutId: number, previous: string, value: string) {
+    return this.audit.log({
+      actorId: null as unknown as number, action: 'PAYOUT_ANOMALY', entityType: 'Payout', entityId: payoutId,
+      previousValue: previous, newValue: value,
+    });
+  }
+
   // ───────────────────────── Aides internes ─────────────────────────
+
+  /**
+   * Frais d'un retrait. Le numéro ENREGISTRÉ du titulaire est d'abord inscrit sur la liste blanche
+   * (idempotent : nécessaire pour les comptes activés avant les retraits réels), puis le fournisseur
+   * donne les frais. Le portefeuille est débité du total, le bénéficiaire reçoit le montant demandé.
+   */
+  private async quote(user: { firstName: string; lastName: string }, phone: string, amount: number) {
+    await this.provider.ensureWhitelisted(phone, `${user.firstName} ${user.lastName}`, getWhitelistMaxAmount());
+    const preview = await this.provider.preview(phone, amount);
+    const totalDebited = preview.totalDebited ?? amount + preview.fees;
+    return { fees: totalDebited - amount, totalDebited };
+  }
 
   /** E-mail au titulaire sur l'état courant du retrait. Ne bloque ni n'échoue jamais le retrait. */
   private async notify(payoutId: number) {

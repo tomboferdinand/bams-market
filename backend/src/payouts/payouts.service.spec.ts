@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { createHmac } from 'crypto';
 import * as bcrypt from 'bcrypt';
-import { PayoutsService } from './payouts.service';
+import { PayoutsService, isWithdrawalWebhook } from './payouts.service';
 import { SimulatedPayoutProvider } from './simulated-payout.provider';
 import { makeAuditMock, makePrismaMock } from '../common/testing/mocks';
 
@@ -17,12 +18,16 @@ describe('PayoutsService', () => {
   });
 
   beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     prisma = makePrismaMock();
     audit = makeAuditMock();
     provider = {
       ensureWhitelisted: jest.fn().mockResolvedValue(undefined),
       preview: jest.fn().mockResolvedValue({ fees: 100 }),
       withdraw: jest.fn().mockResolvedValue({ status: 'success', providerReference: 'OP-1' }),
+      removeFromWhitelist: jest.fn().mockResolvedValue(undefined),
+      getStatus: jest.fn().mockResolvedValue({ status: 'pending' }),
     };
     mail = {
       sendPayoutEmail: jest.fn().mockResolvedValue(true),
@@ -328,6 +333,170 @@ describe('PayoutsService', () => {
       arm();
       expect(await service.settle(9, 'REUSSI', { providerReference: 'OP-2' })).toEqual({ changed: true });
       expect(mail.sendPayoutEmail).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('liste blanche et frais réels', () => {
+    it('aperçu : inscrit d’abord le numéro ENREGISTRÉ (idempotent) avec le plafond configuré', async () => {
+      process.env.GOALPAY_WHITELIST_MAX_AMOUNT = '200000';
+      try {
+        prisma.walletEntry.aggregate.mockResolvedValue({ _sum: { amount: 9000 } });
+        await service.preview(5, 5000);
+        expect(provider.ensureWhitelisted).toHaveBeenCalledWith('0341234567', 'Jean Dupont', 200000);
+        expect(provider.ensureWhitelisted.mock.invocationCallOrder[0]).toBeLessThan(provider.preview.mock.invocationCallOrder[0]);
+      } finally {
+        delete process.env.GOALPAY_WHITELIST_MAX_AMOUNT;
+      }
+    });
+
+    it('le total débité du fournisseur (total_debite) est repris tel quel, à l’aperçu comme au retrait', async () => {
+      provider.preview.mockResolvedValue({ fees: 1000, totalDebited: 6000 });
+      prisma.walletEntry.aggregate.mockResolvedValue({ _sum: { amount: 9000 } });
+      expect(await service.preview(5, 5000)).toMatchObject({ amount: 5000, fees: 1000, totalDebited: 6000 });
+      arm();
+      await service.create(5, 5000, PASSWORD);
+      expect(prisma.payout.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ amount: 5000, fees: 1000, totalDebited: 6000 }),
+      }));
+      expect(prisma.walletEntry.create).toHaveBeenCalledWith({ data: { userId: 5, payoutId: 9, type: 'RETRAIT', amount: -6000 } });
+    });
+
+    it('liste blanche refusée : aucun débit, aucun retrait', async () => {
+      provider.ensureWhitelisted.mockRejectedValue(new Error('GoalPay a refusé'));
+      arm();
+      await expect(service.create(5, 5000, PASSWORD)).rejects.toThrow('GoalPay a refusé');
+      expect(prisma.payout.create).not.toHaveBeenCalled();
+      expect(provider.withdraw).not.toHaveBeenCalled();
+    });
+
+    it('changement de numéro par l’admin : nouveau inscrit, ancien retiré ; un échec du retrait ne bloque pas', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 5, role: 'COMMERCANT', firstName: 'Jean', lastName: 'Dupont', email: null, payoutPhone: '0341234567' });
+      prisma.user.findFirst.mockResolvedValue(null);
+      await service.adminSetPayoutPhone(1, 5, '0331234567', 'Téléphone perdu');
+      expect(provider.ensureWhitelisted).toHaveBeenCalledWith('0331234567', 'Jean Dupont', 500000);
+      expect(provider.removeFromWhitelist).toHaveBeenCalledWith('0341234567');
+      expect(provider.ensureWhitelisted.mock.invocationCallOrder[0]).toBeLessThan(provider.removeFromWhitelist.mock.invocationCallOrder[0]);
+
+      provider.removeFromWhitelist.mockRejectedValue(new Error('GoalPay indisponible'));
+      prisma.user.findUnique.mockResolvedValue({ id: 5, role: 'COMMERCANT', firstName: 'Jean', lastName: 'Dupont', email: null, payoutPhone: '0331234567' });
+      await expect(service.adminSetPayoutPhone(1, 5, '0381234567', 'Changement')).resolves.toEqual({ payoutPhone: '0381234567' });
+    });
+  });
+
+  describe('webhook GoalPay des retraits', () => {
+    const SECRET = 'SK_TEST';
+    const sig = createHmac('sha256', SECRET).update(SECRET).digest('hex');
+    const hook = (event: string, data: any = {}, extra: any = {}) => ({
+      webhook_type: 'withdrawal.service', event, status: event.endsWith('success') ? 'success' : 'failed',
+      data: { reference: 'BAMP-1', montant: 5000.0, mobile: '0341234567', reference_operateur: 'PP26', ...data }, ...extra,
+    });
+    const pending = (over: any = {}) => ({ id: 9, userId: 5, amount: 5000, phone: '0341234567', totalDebited: 5100, status: 'EN_ATTENTE', ...over });
+
+    beforeEach(() => {
+      process.env.GOALPAY_WEBHOOK_SECRET = SECRET;
+      prisma.payout.updateMany.mockResolvedValue({ count: 1 });
+    });
+    afterEach(() => delete process.env.GOALPAY_WEBHOOK_SECRET);
+
+    it('reconnaît un webhook de retrait (et pas un paiement)', () => {
+      expect(isWithdrawalWebhook(hook('withdrawal.success'))).toBe(true);
+      expect(isWithdrawalWebhook({ event: 'withdrawal.failed' })).toBe(true);
+      expect(isWithdrawalWebhook({ event: 'payment.success', data: {} })).toBe(false);
+    });
+
+    it('signature invalide : 401, rien n’est modifié', async () => {
+      await expect(service.handleGoalpayWebhook('faux', hook('withdrawal.success'))).rejects.toThrow(UnauthorizedException);
+      expect(prisma.payout.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('withdrawal.success : REUSSI avec la référence opérateur, retrouvé par NOTRE référence', async () => {
+      prisma.payout.findUnique.mockResolvedValue(pending());
+      expect(await service.handleGoalpayWebhook(sig, hook('withdrawal.success'))).toEqual({ received: true, status: 'REUSSI' });
+      expect(prisma.payout.findUnique.mock.calls[0][0].where).toEqual({ reference: 'BAMP-1' });
+      expect(prisma.payout.updateMany).toHaveBeenCalledWith({
+        where: { id: 9, status: 'EN_ATTENTE' }, data: expect.objectContaining({ status: 'REUSSI', providerReference: 'PP26' }),
+      });
+      expect(prisma.walletEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('withdrawal.failed : ECHOUE avec le message, recrédit montant + frais', async () => {
+      prisma.payout.findUnique.mockResolvedValue(pending());
+      await service.handleGoalpayWebhook(sig, hook('withdrawal.failed', {}, { error: 'Echec du transfert, numéro invalide.' }));
+      expect(prisma.payout.updateMany).toHaveBeenCalledWith({
+        where: { id: 9, status: 'EN_ATTENTE' }, data: expect.objectContaining({ status: 'ECHOUE', error: 'Echec du transfert, numéro invalide.' }),
+      });
+      expect(prisma.walletEntry.create).toHaveBeenCalledWith({ data: { userId: 5, payoutId: 9, type: 'RETRAIT_ANNULE', amount: 5100 } });
+    });
+
+    it('webhook rejoué : déjà traité, aucun second recrédit', async () => {
+      prisma.payout.findUnique.mockResolvedValue(pending({ status: 'ECHOUE' }));
+      expect(await service.handleGoalpayWebhook(sig, hook('withdrawal.failed'))).toEqual({ received: true, status: 'already-processed' });
+      expect(prisma.payout.updateMany).not.toHaveBeenCalled();
+      expect(prisma.walletEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('montant ou numéro différent : jamais réglé, anomalie journalisée', async () => {
+      prisma.payout.findUnique.mockResolvedValue(pending());
+      expect(await service.handleGoalpayWebhook(sig, hook('withdrawal.success', { montant: 9000 }))).toEqual({ received: true, status: 'ignored' });
+      expect(await service.handleGoalpayWebhook(sig, hook('withdrawal.success', { mobile: '0330000000' }))).toEqual({ received: true, status: 'ignored' });
+      expect(prisma.payout.updateMany).not.toHaveBeenCalled();
+      expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'PAYOUT_ANOMALY', newValue: 'ANOMALIE_MONTANT' }));
+    });
+
+    it('réussi après un échec déjà recrédité : signalé à l’administration, rien n’est modifié', async () => {
+      prisma.payout.findUnique.mockResolvedValue(pending({ status: 'ECHOUE' }));
+      await service.handleGoalpayWebhook(sig, hook('withdrawal.success'));
+      expect(prisma.payout.updateMany).not.toHaveBeenCalled();
+      expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'PAYOUT_ANOMALY', newValue: 'REUSSI_APRES_RECREDIT' }));
+    });
+
+    it('référence inconnue : 404 ; événement inconnu : ignoré', async () => {
+      prisma.payout.findUnique.mockResolvedValue(null);
+      await expect(service.handleGoalpayWebhook(sig, hook('withdrawal.success'))).rejects.toThrow(NotFoundException);
+      expect(await service.handleGoalpayWebhook(sig, hook('withdrawal.autre'))).toEqual({ received: true, status: 'ignored' });
+    });
+  });
+
+  describe('rattrapage des retraits en attente', () => {
+    beforeEach(() => {
+      prisma.payout.updateMany.mockResolvedValue({ count: 1 });
+      prisma.payout.findUnique.mockResolvedValue({ id: 9, userId: 5, totalDebited: 5100, status: 'EN_ATTENTE' });
+    });
+
+    it('ne vérifie que les retraits EN_ATTENTE depuis plus de 15 min, par lot', async () => {
+      prisma.payout.findMany.mockResolvedValue([]);
+      await service.checkPendingPayouts();
+      const arg = prisma.payout.findMany.mock.calls[0][0];
+      expect(arg.where.status).toBe('EN_ATTENTE');
+      expect(Date.now() - arg.where.createdAt.lte.getTime()).toBeGreaterThanOrEqual(15 * 60 * 1000 - 1000);
+      expect(arg.take).toBe(20);
+    });
+
+    it('succès, échec, en attente, panne : chacun traité prudemment', async () => {
+      prisma.payout.findMany.mockResolvedValue([
+        { id: 1, reference: 'BAMP-A', amount: 5000 },
+        { id: 2, reference: 'BAMP-B', amount: 5000 },
+        { id: 3, reference: 'BAMP-C', amount: 5000 },
+        { id: 4, reference: 'BAMP-D', amount: 5000 },
+      ]);
+      provider.getStatus
+        .mockResolvedValueOnce({ status: 'success', amount: 5000, providerReference: 'PP1' })
+        .mockResolvedValueOnce({ status: 'failed', error: 'Numéro invalide' })
+        .mockResolvedValueOnce({ status: 'pending' })
+        .mockRejectedValueOnce(new Error('timeout'));
+      expect(await service.checkPendingPayouts()).toEqual({ checked: 4, settled: 2 });
+      expect(provider.getStatus).toHaveBeenCalledWith('BAMP-A');
+      expect(prisma.payout.updateMany).toHaveBeenCalledWith({ where: { id: 1, status: 'EN_ATTENTE' }, data: expect.objectContaining({ status: 'REUSSI' }) });
+      expect(prisma.payout.updateMany).toHaveBeenCalledWith({ where: { id: 2, status: 'EN_ATTENTE' }, data: expect.objectContaining({ status: 'ECHOUE', error: 'Numéro invalide' }) });
+      expect(prisma.payout.updateMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('montant différent annoncé par le statut : anomalie, pas de règlement', async () => {
+      prisma.payout.findMany.mockResolvedValue([{ id: 1, reference: 'BAMP-A', amount: 5000 }]);
+      provider.getStatus.mockResolvedValue({ status: 'success', amount: 7000 });
+      expect(await service.checkPendingPayouts()).toEqual({ checked: 1, settled: 0 });
+      expect(prisma.payout.updateMany).not.toHaveBeenCalled();
+      expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'PAYOUT_ANOMALY' }));
     });
   });
 

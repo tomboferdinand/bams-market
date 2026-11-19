@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import { Injectable } from '@nestjs/common';
 import { getSimulatedFeePercent } from '../common/payout-config';
-import { PayoutPreview, PayoutProvider, PayoutResult } from './payout-provider';
+import { PayoutPreview, PayoutProvider, PayoutResult, PayoutStatusResult } from './payout-provider';
 
 /**
  * SIMULATION — retraits fictifs : aucun argent ne bouge. Sert aux tests, au développement et à la
@@ -13,11 +13,20 @@ export class SimulatedPayoutProvider extends PayoutProvider {
     // rien à faire en simulation
   }
 
+  async removeFromWhitelist(): Promise<void> {
+    // rien à faire en simulation
+  }
+
   async preview(_phone: string, amount: number): Promise<PayoutPreview> {
     return { fees: Math.round((amount * getSimulatedFeePercent()) / 100) };
   }
 
   async withdraw(): Promise<PayoutResult> {
     return { status: 'success', providerReference: `SIMOP-${randomBytes(6).toString('hex').toUpperCase()}` };
+  }
+
+  async getStatus(): Promise<PayoutStatusResult> {
+    // Les retraits simulés sont réglés immédiatement : rien ne reste en attente.
+    return { status: 'pending' };
   }
 }

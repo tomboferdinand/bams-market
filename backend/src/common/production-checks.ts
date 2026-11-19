@@ -18,6 +18,13 @@ export function productionConfigErrors(env: Env = process.env): string[] {
     }
   }
 
+  // Retraits réels : impossible de basculer sans les clés GoalPay (jeton d'accès et clé secrète de signature).
+  if (env.PAYOUT_MODE === 'goalpay') {
+    for (const name of ['GOALPAY_ACCESS_KEY', 'GOALPAY_WEBHOOK_SECRET']) {
+      if (!env[name]?.trim()) errors.push(`${name} est obligatoire avec PAYOUT_MODE=goalpay (retraits réels).`);
+    }
+  }
+
   // Sans liste, tous les sites seraient autorisés à appeler l'API avec le cookie de session.
   const origins = parseCorsOrigins(env.CORS_ORIGIN);
   if (origins.length === 0) {

@@ -28,5 +28,11 @@ export const getDailyMaxPayoutCount = () => num(process.env.PAYOUT_DAILY_MAX_COU
 // Confirmation par mot de passe : nombre d'erreurs tolérées, puis blocage temporaire.
 export const getPayoutAuthMaxAttempts = () => num(process.env.PAYOUT_AUTH_MAX_ATTEMPTS, 5) || 5;
 export const getPayoutAuthLockMinutes = () => num(process.env.PAYOUT_AUTH_LOCK_MINUTES, 15);
+// GoalPay : montant maximum par retrait déclaré pour chaque numéro de la liste blanche (fixe).
+export const getWhitelistMaxAmount = () => num(process.env.GOALPAY_WHITELIST_MAX_AMOUNT, getMaxPayoutAmount()) || getMaxPayoutAmount();
+// Rattrapage : un retrait EN_ATTENTE depuis plus de N minutes est vérifié auprès de GoalPay
+// (PAYOUT_PENDING_CHECK_MINUTES, 15 par défaut), toutes les PAYOUT_STATUS_SWEEP_SECONDS (1800 ; 0 désactive).
+export const getPendingCheckMinutes = () => num(process.env.PAYOUT_PENDING_CHECK_MINUTES, 15);
+export const getPayoutStatusSweepSeconds = () => num(process.env.PAYOUT_STATUS_SWEEP_SECONDS, 1800);
 // Simulation : frais fictifs en pourcentage du montant retiré.
 export const getSimulatedFeePercent = () => num(process.env.PAYOUT_SIM_FEE_PERCENT, 2);

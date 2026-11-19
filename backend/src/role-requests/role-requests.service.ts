@@ -13,7 +13,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AuditService } from '../common/audit/audit.service';
 import { MailService } from '../common/mail/mail.service';
 import { generateToken, hashToken } from '../auth/tokens';
-import { getMaxPayoutAmount } from '../common/payout-config';
+import { getWhitelistMaxAmount } from '../common/payout-config';
 import { PayoutProvider } from '../payouts/payout-provider';
 import { normalizeMobile } from '../payouts/phone';
 import { CreateRoleRequestDto } from './dto/create-role-request.dto';
@@ -141,7 +141,7 @@ export class RoleRequestsService {
       await this.provider.ensureWhitelisted(
         request.payoutPhone,
         `${request.user.firstName} ${request.user.lastName}`,
-        getMaxPayoutAmount(),
+        getWhitelistMaxAmount(),
       );
     } catch (err) {
       this.logger.error(`Liste blanche refusée pour la demande ${id} : ${(err as Error).message}`);
