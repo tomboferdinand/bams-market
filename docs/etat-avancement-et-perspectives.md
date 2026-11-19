@@ -23,7 +23,7 @@ Le MVP couvre tout le parcours, de la commande au paiement des acteurs :
 | Le changement de numéro de retrait passe par l'administration | Choix de sécurité : un numéro volé ne peut pas être modifié par un intrus. Une demande de changement dans l'application est prévue. |
 | Un compte non vérifié peut parcourir le site | Il ne peut ni commander, ni payer, ni retirer. Le blocage complet de l'accès est prévu. |
 | Paiements réels GoalPay peu testés | Le mode simulation couvre la démonstration ; un test réel avec montant minimum reste à faire avant ouverture. |
-| Retraits réels vers Mobile Money non branchés | Seul le retrait simulé est exploité (calcul des frais, débit, annulation en cas d'échec, e-mail de confirmation). Le retrait réel via GoalPay est à raccorder et à tester. |
+| Retraits réels vers Mobile Money pas encore essayés en conditions réelles | Le retrait réel via l'API GoalPay (liste blanche, frais réels, webhook, rattrapage par statut) est codé et testé avec un faux client GoalPay ; il s'active avec PAYOUT_MODE=goalpay et revient à la simulation en changeant cette seule variable. Un premier essai réel à petit montant reste à faire. |
 | Pas d'e-mail à chaque changement de statut de commande | Le client suit sa commande dans « Mes commandes ». Les e-mails existants concernent le compte (vérification, mot de passe, activation de rôle), les retraits et le changement de numéro de retrait. |
 | Pas d'annulation après paiement ni de circuit « rupture de stock imprévue » | Traités manuellement par contact avec l'administration. |
 | Pas de réconciliation automatique des paiements | Les anomalies (paiement tardif, montant différent) sont journalisées pour traitement. |
