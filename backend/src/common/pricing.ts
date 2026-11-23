@@ -5,8 +5,8 @@
 // Les valeurs sont lues à l'appel (et non à l'import) pour rester configurables
 // par variables d'environnement et testables.
 
-export const getMinOrderAmount = () => Number(process.env.MIN_ORDER_AMOUNT ?? 2000);
-export const getDeliveryFee = () => Number(process.env.DELIVERY_FEE ?? 2000);
+export const getMinOrderAmount = () => Number(process.env.MIN_ORDER_AMOUNT ?? 200);
+export const getDeliveryFee = () => Number(process.env.DELIVERY_FEE ?? 100);
 
 export interface OrderTotals {
     subtotal: number;

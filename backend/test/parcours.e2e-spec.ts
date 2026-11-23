@@ -19,7 +19,7 @@ type Role = 'CLIENT' | 'COMMERCANT' | 'LIVREUR' | 'ADMINISTRATEUR';
 type Actor = { agent: ReturnType<typeof request.agent>; id: number; phone: string; lastInitial: string; addressId?: number };
 
 const PASSWORD = 'Test1234';
-const DELIVERY_FEE = Number(process.env.DELIVERY_FEE ?? 2000);
+const DELIVERY_FEE = Number(process.env.DELIVERY_FEE ?? 100);
 const PRICE = 5000;
 const stamp = Date.now();
 const rand = (n: number) => Array.from({ length: n }, () => Math.floor(Math.random() * 10)).join('');
