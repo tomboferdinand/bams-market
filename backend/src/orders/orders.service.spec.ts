@@ -85,7 +85,7 @@ describe('OrdersService', () => {
 
     it('refuse un sous-total sous le minimum (BR-CMD-01)', async () => {
       prisma.address.findUnique.mockResolvedValue({ id: 1, userId: 1 });
-      cart.getMine.mockResolvedValue({ items: [item(150, 1)] });
+      cart.getMine.mockResolvedValue({ items: [item(500, 1)] });
       await expect(service.create(1, 1)).rejects.toThrow(BadRequestException);
       expect(prisma.order.create).not.toHaveBeenCalled();
     });
